@@ -59,37 +59,49 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
 # ========== NOUVEL ENDPOINT STATISTIQUES ==========
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    # Nombre total de messages
-    total = await db.scalar(func.count(models.Message.id))
+    # 1. Total des messages
+    result_total = await db.execute(func.count(models.Message.id))
+    total = result_total.scalar() or 0
     
-    # Nombre de messages toxiques
-    toxic_count = await db.scalar(
+    if total == 0:
+        return {
+            "total_messages": 0,
+            "toxic_count": 0,
+            "toxic_percentage": 0.0,
+            "by_threat_type": {},
+            "top_keywords": {}
+        }
+    
+    # 2. Nombre de toxiques
+    result_toxic = await db.execute(
         func.count().filter(models.Message.label == "toxique")
     )
+    toxic_count = result_toxic.scalar() or 0
     
-    # Pourcentage de toxicité
-    toxic_percentage = (toxic_count / total * 100) if total > 0 else 0
+    toxic_percentage = round((toxic_count / total) * 100, 2)
     
-    # Répartition par type de menace (dérouler le JSON)
+    # 3. Types de menace (JSON)
+    threat_result = await db.execute(models.Message.threat_types)
     threat_counts = {}
-    messages = await db.execute(models.Message.threat_types)
-    for row in messages:
-        for t in row[0] or []:
-            threat_counts[t] = threat_counts.get(t, 0) + 1
+    for row in threat_result:
+        if row[0]:
+            for t in row[0]:
+                threat_counts[t] = threat_counts.get(t, 0) + 1
     
-    # Top 5 des mots-clés les plus fréquents
-    keyword_counts = {}
-    kw_messages = await db.execute(models.Message.keywords_found)
-    for row in kw_messages:
-        for kw in row[0] or []:
-            keyword_counts[kw] = keyword_counts.get(kw, 0) + 1
+    # 4. Mots-clés (JSON)
+    kw_result = await db.execute(models.Message.keywords_found)
+    kw_counts = {}
+    for row in kw_result:
+        if row[0]:
+            for kw in row[0]:
+                kw_counts[kw] = kw_counts.get(kw, 0) + 1
     
-    top_keywords = dict(sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True)[:5])
+    top_keywords = dict(sorted(kw_counts.items(), key=lambda x: x[1], reverse=True)[:5])
     
     return {
         "total_messages": total,
         "toxic_count": toxic_count,
-        "toxic_percentage": round(toxic_percentage, 2),
+        "toxic_percentage": toxic_percentage,
         "by_threat_type": threat_counts,
         "top_keywords": top_keywords
     }
