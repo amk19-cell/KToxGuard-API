@@ -1,51 +1,57 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.detector import detect_toxicity
+from app.database import engine, get_db
+from app import models
 
-# Création de l'application
-app = FastAPI(
-    title="KToxGuard API",
-    description="API de détection de harcèlement et menaces en coréen",
-    version="1.0.0"
-)
+app = FastAPI(title="KToxGuard API")
 
-# Configuration CORS (pour que le frontend puisse appeler l'API)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # À restreindre plus tard avec les domaines autorisés
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Modèle de données pour la requête
 class MessageIn(BaseModel):
     text: str
     platform: Optional[str] = None
     author: Optional[str] = None
     ip_address: Optional[str] = None
 
-# Modèle de données pour la réponse
-class ToxicityResponse(BaseModel):
-    label: str
-    confidence: float
-    keywords_found: List[str]
-    threat_types: List[str]
+@app.on_event("startup")
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.create_all)
 
-# Endpoint racine (GET) - pour vérifier que l'API est vivante
 @app.get("/")
 def root():
-    return {"message": "Anti-Violence API is running", "status": "ok"}
+    return {"message": "KToxGuard API is running"}
 
-# Endpoint d'analyse (POST)
-@app.post("/analyze", response_model=ToxicityResponse)
-async def analyze(msg: MessageIn):
-    result = detect_toxicity(msg.text)
-    return result
-
-# Endpoint de santé (pour UptimeRobot)
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+@app.post("/analyze")
+async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
+    result = detect_toxicity(msg.text)
+    
+    # Stocker en base
+    db_msg = models.Message(
+        text=msg.text,
+        platform=msg.platform,
+        author=msg.author,
+        ip_address=msg.ip_address,
+        label=result["label"],
+        confidence=result["confidence"],
+        keywords_found=result["keywords_found"],
+        threat_types=result["threat_types"]
+    )
+    db.add(db_msg)
+    await db.commit()
+    
+    return result
