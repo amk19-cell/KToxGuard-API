@@ -53,10 +53,12 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     return result
 
 # ========== NOUVEL ENDPOINT STATISTIQUES ==========
+from sqlalchemy import func, select
+
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    # 1. Total des messages
-    total_result = await db.execute(func.count(models.Message.id))
+    # 1. Total (syntaxe universelle)
+    total_result = await db.execute(select(func.count(models.Message.id)))
     total = total_result.scalar() or 0
     
     if total == 0:
@@ -68,24 +70,24 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "top_keywords": {}
         }
     
-    # 2. Nombre de messages toxiques (syntaxe corrigée)
+    # 2. Toxiques (syntaxe universelle)
     toxic_result = await db.execute(
-        func.count(models.Message.id).filter(models.Message.label == "toxique")
+        select(func.count()).where(models.Message.label == "toxique")
     )
     toxic_count = toxic_result.scalar() or 0
     
     toxic_percentage = round((toxic_count / total) * 100, 2)
     
-    # 3. Types de menace (JSON)
-    threat_result = await db.execute(models.Message.threat_types)
+    # 3. Types de menace
+    threat_result = await db.execute(select(models.Message.threat_types))
     threat_counts = {}
     for row in threat_result:
         if row[0]:
             for t in row[0]:
                 threat_counts[t] = threat_counts.get(t, 0) + 1
     
-    # 4. Mots-clés (JSON)
-    kw_result = await db.execute(models.Message.keywords_found)
+    # 4. Mots-clés
+    kw_result = await db.execute(select(models.Message.keywords_found))
     kw_counts = {}
     for row in kw_result:
         if row[0]:
