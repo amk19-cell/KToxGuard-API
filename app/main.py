@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.detector import detect_toxicity
 from app.database import engine, get_db
@@ -40,7 +41,6 @@ def health():
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     result = detect_toxicity(msg.text)
     
-    # Stocker en base
     db_msg = models.Message(
         text=msg.text,
         platform=msg.platform,
@@ -55,3 +55,41 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     return result
+
+# ========== NOUVEL ENDPOINT STATISTIQUES ==========
+@app.get("/stats")
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    # Nombre total de messages
+    total = await db.scalar(func.count(models.Message.id))
+    
+    # Nombre de messages toxiques
+    toxic_count = await db.scalar(
+        func.count().filter(models.Message.label == "toxique")
+    )
+    
+    # Pourcentage de toxicité
+    toxic_percentage = (toxic_count / total * 100) if total > 0 else 0
+    
+    # Répartition par type de menace (dérouler le JSON)
+    threat_counts = {}
+    messages = await db.execute(models.Message.threat_types)
+    for row in messages:
+        for t in row[0] or []:
+            threat_counts[t] = threat_counts.get(t, 0) + 1
+    
+    # Top 5 des mots-clés les plus fréquents
+    keyword_counts = {}
+    kw_messages = await db.execute(models.Message.keywords_found)
+    for row in kw_messages:
+        for kw in row[0] or []:
+            keyword_counts[kw] = keyword_counts.get(kw, 0) + 1
+    
+    top_keywords = dict(sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True)[:5])
+    
+    return {
+        "total_messages": total,
+        "toxic_count": toxic_count,
+        "toxic_percentage": round(toxic_percentage, 2),
+        "by_threat_type": threat_counts,
+        "top_keywords": top_keywords
+    }
