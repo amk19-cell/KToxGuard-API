@@ -1,7 +1,3 @@
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, List
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.detector import detect_toxicity
