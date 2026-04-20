@@ -1,4 +1,8 @@
-from sqlalchemy import func
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.detector import detect_toxicity
 from app.database import engine, get_db
