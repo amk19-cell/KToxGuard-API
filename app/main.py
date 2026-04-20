@@ -60,8 +60,8 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
     # 1. Total des messages
-    result_total = await db.execute(func.count(models.Message.id))
-    total = result_total.scalar() or 0
+    total_result = await db.execute(func.count(models.Message.id))
+    total = total_result.scalar() or 0
     
     if total == 0:
         return {
@@ -72,11 +72,11 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "top_keywords": {}
         }
     
-    # 2. Nombre de toxiques
-    result_toxic = await db.execute(
-        func.count().filter(models.Message.label == "toxique")
+    # 2. Nombre de messages toxiques (syntaxe corrigée)
+    toxic_result = await db.execute(
+        func.count(models.Message.id).filter(models.Message.label == "toxique")
     )
-    toxic_count = result_toxic.scalar() or 0
+    toxic_count = toxic_result.scalar() or 0
     
     toxic_percentage = round((toxic_count / total) * 100, 2)
     
