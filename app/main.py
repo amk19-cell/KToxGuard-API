@@ -3,15 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.detector import detect_toxicity
 
-app = FastAPI(title="Anti-Violence API") ): from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # à restreindre plus tard
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Anti-Violence API")
 
 class MessageIn(BaseModel):
     text: str
