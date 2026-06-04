@@ -62,7 +62,7 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return result
 
-@app.post("/collect")
+@app.api_route("/collect", methods=["POST", "GET"])
 async def trigger_collect(db: AsyncSession = Depends(get_db)):
     global last_collect_time
     now = datetime.now()
@@ -80,6 +80,10 @@ async def trigger_collect(db: AsyncSession = Depends(get_db)):
             recommendations=result.get("recommendations", {}),
             lang="en"
         )
+        db.add(db_msg)
+    await db.commit()
+    last_collect_time = now
+    return {"status": "ok", "collected": len(comments)}
         db.add(db_msg)
     await db.commit()
     last_collect_time = now
