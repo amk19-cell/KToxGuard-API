@@ -9,7 +9,6 @@ from app.detector import detect_toxicity
 from app.database import engine, get_db
 from app import models
 from app.collectors import fetch_reddit_comments
-from app.scheduler import start_scheduler
 
 app = FastAPI(title="KToxGuard API")
 
@@ -34,7 +33,7 @@ last_collect_time = datetime.now() - timedelta(hours=1)
 async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.create_all)
-    start_scheduler()
+    # Scheduler désactivé pour éviter les crashs
 
 @app.get("/")
 def root():
@@ -43,14 +42,6 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
-    @app.get("/artists")
-async def get_artists():
-    from pathlib import Path
-    import json
-    path = Path(__file__).parent / "artists.json"
-    with open(path, "r", encoding="utf-8") as f:
-        artists = json.load(f)
-    return artists
 
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
