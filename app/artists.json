@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "name": "BTS",
+    "members": 7,
+    "photo": "https://cdn.britannica.com/77/213477-050-32E30A3D/BTS-South-Korean-boy-band-June-6-2019.jpg",
+    "keywords": ["bts", "방탄소년단", "rm", "jin", "suga", "jhope", "jimin", "v", "jungkook"]
+  },
+  {
+    "id": 2,
+    "name": "SEVENTEEN",
+    "members": 13,
+    "photo": "https://cdn.britannica.com/39/236339-050-2C6CE9A7/K-pop-boy-band-Seventeen-2022.jpg",
+    "keywords": ["seventeen", "세븐틴", "s.coups", "jeonghan", "joshua", "jun", "hoshi", "wonwoo", "woozi", "dk", "mingyu", "the8", "seungkwan", "vernon", "dino"]
+  },
+  {
+    "id": 3,
+    "name": "TXT",
+    "members": 5,
+    "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/TXT_logo.svg/200px-TXT_logo.svg.png",
+    "keywords": ["txt", "투모로우바이투게더", "soobin", "yeonjun", "beomgyu", "taehyun", "hueningkai"]
+  },
+  {
+    "id": 4,
+    "name": "NewJeans",
+    "members": 5,
+    "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/NewJeans_logo.svg/200px-NewJeans_logo.svg.png",
+    "keywords": ["newjeans", "뉴진스", "minji", "hanni", "danielle", "haerin", "hyein"]
+  }
+]
