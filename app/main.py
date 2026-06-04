@@ -9,6 +9,7 @@ from app.detector import detect_toxicity
 from app.database import engine, get_db
 from app import models
 from app.collectors import fetch_reddit_comments
+from app.scheduler import start_scheduler
 
 app = FastAPI(title="KToxGuard API")
 
@@ -25,6 +26,7 @@ class MessageIn(BaseModel):
     platform: Optional[str] = None
     author: Optional[str] = None
     ip_address: Optional[str] = None
+    lang: Optional[str] = "en"
 
 last_collect_time = datetime.now() - timedelta(hours=1)
 
@@ -32,6 +34,7 @@ last_collect_time = datetime.now() - timedelta(hours=1)
 async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.create_all)
+    start_scheduler()
 
 @app.get("/")
 def root():
@@ -43,7 +46,7 @@ def health():
 
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
-    result = detect_toxicity(msg.text)
+    result = detect_toxicity(msg.text, msg.lang)
     db_msg = models.Message(
         text=msg.text,
         platform=msg.platform,
@@ -53,7 +56,8 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
         confidence=result["confidence"],
         keywords_found=result["keywords_found"],
         threat_types=result["threat_types"],
-        recommendations=result.get("recommendations", {})
+        recommendations=result.get("recommendations", {}),
+        lang=msg.lang
     )
     db.add(db_msg)
     await db.commit()
@@ -65,7 +69,7 @@ async def trigger_collect(db: AsyncSession = Depends(get_db)):
     now = datetime.now()
     comments = await fetch_reddit_comments("kpop", last_collect_time)
     for comment in comments:
-        result = detect_toxicity(comment["text"])
+        result = detect_toxicity(comment["text"], "en")
         db_msg = models.Message(
             text=comment["text"],
             platform=comment["platform"],
@@ -74,7 +78,8 @@ async def trigger_collect(db: AsyncSession = Depends(get_db)):
             confidence=result["confidence"],
             keywords_found=result["keywords_found"],
             threat_types=result["threat_types"],
-            recommendations=result.get("recommendations", {})
+            recommendations=result.get("recommendations", {}),
+            lang="en"
         )
         db.add(db_msg)
     await db.commit()
