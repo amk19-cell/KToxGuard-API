@@ -38,9 +38,8 @@ threat_patterns = [
 ]
 
 def detect_toxicity(text: str, lang: str = "en"):
-    # Optionnel : recharger les recommandations si la langue change
     global recommendations
-    if lang != DEFAULT_LANG and lang in RECO_FILES:
+    if lang in RECO_FILES:
         reco_path = Path(__file__).parent / RECO_FILES[lang]
         with open(reco_path, "r", encoding="utf-8") as f:
             recommendations = json.load(f)
@@ -58,7 +57,6 @@ def detect_toxicity(text: str, lang: str = "en"):
     final_score = max(keyword_score, context_score)
     label = "toxique" if final_score >= 0.7 else "neutre"
     
-    # Récupérer les recommandations
     reco = {}
     if label == "toxique":
         for t in threat_types:
