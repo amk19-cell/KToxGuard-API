@@ -14,3 +14,5 @@ class Message(Base):
     confidence = Column(Float)
     keywords_found = Column(JSON)
     threat_types = Column(JSON)
+    recommendations = Column(JSON, nullable=True)
+    lang = Column(String(2), default="en")
