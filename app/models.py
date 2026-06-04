@@ -16,3 +16,4 @@ class Message(Base):
     threat_types = Column(JSON)
     recommendations = Column(JSON, nullable=True)
     lang = Column(String(2), default="en")
+    artist_id = Column(Integer, nullable=True)
