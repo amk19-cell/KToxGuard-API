@@ -3,20 +3,12 @@ from datetime import datetime
 import json
 from pathlib import Path
 
-# Charger les mots-clés des artistes
-ARTIST_FILE = Path(__file__).parent / "artists.json"
-ARTIST_KEYWORDS = []
-if ARTIST_FILE.exists():
-    with open(ARTIST_FILE, "r", encoding="utf-8") as f:
-        artists = json.load(f)
-        for artist in artists:
-            ARTIST_KEYWORDS.extend(artist.get("keywords", []))
-else:
-    ARTIST_KEYWORDS = ["bts", "seventeen", "txt", "newjeans"]
+# Liste de mots-clés par défaut (sans fichier)
+DEFAULT_KEYWORDS = ["bts", "bangtan", "seventeen", "txt", "newjeans", "뉴진스", "방탄"]
 
 async def fetch_reddit_comments(subreddit, since_time):
     url = f"https://www.reddit.com/r/{subreddit}/comments.json?limit=30"
-    headers = {"User-Agent": "KToxGuard/1.0 (social listening bot)"}
+    headers = {"User-Agent": "KToxGuard/1.0"}
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(url, headers=headers) as response:
@@ -29,7 +21,7 @@ async def fetch_reddit_comments(subreddit, since_time):
                     created_utc = datetime.fromtimestamp(comment_data.get("created_utc", 0))
                     if created_utc > since_time:
                         text = comment_data.get("body", "").lower()
-                        if any(kw in text for kw in ARTIST_KEYWORDS) and any('\uac00' <= c <= '\ud7a3' for c in text):
+                        if any(kw in text for kw in DEFAULT_KEYWORDS) and any('\uac00' <= c <= '\ud7a3' for c in text):
                             comments.append({
                                 "text": comment_data.get("body", ""),
                                 "platform": "reddit",
@@ -37,5 +29,5 @@ async def fetch_reddit_comments(subreddit, since_time):
                             })
                 return comments
         except Exception as e:
-            print(f"Erreur Reddit: {e}")
+            print(f"Erreur collecte: {e}")
             return []
