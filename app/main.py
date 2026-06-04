@@ -26,6 +26,7 @@ class MessageIn(BaseModel):
     platform: Optional[str] = None
     author: Optional[str] = None
     ip_address: Optional[str] = None
+    lang: Optional[str] = "en"          # <-- AJOUT : langue pour les recommandations
 
 last_collect_time = datetime.now() - timedelta(hours=1)
 scheduler = None
@@ -53,7 +54,7 @@ def health():
 
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
-    result = detect_toxicity(msg.text)
+    result = detect_toxicity(msg.text, msg.lang)   # <-- passage de la langue
     
     db_msg = models.Message(
         text=msg.text,
@@ -63,7 +64,8 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
         label=result["label"],
         confidence=result["confidence"],
         keywords_found=result["keywords_found"],
-        threat_types=result["threat_types"]
+        threat_types=result["threat_types"],
+        recommendations=result.get("recommendations", {})
     )
     db.add(db_msg)
     await db.commit()
@@ -80,7 +82,7 @@ async def trigger_collect(db: AsyncSession = Depends(get_db)):
     new_comments.extend(reddit_comments)
     
     for comment in new_comments:
-        result = detect_toxicity(comment["text"])
+        result = detect_toxicity(comment["text"], "en")   # collecte en anglais par défaut
         db_msg = models.Message(
             text=comment["text"],
             platform=comment["platform"],
@@ -88,7 +90,8 @@ async def trigger_collect(db: AsyncSession = Depends(get_db)):
             label=result["label"],
             confidence=result["confidence"],
             keywords_found=result["keywords_found"],
-            threat_types=result["threat_types"]
+            threat_types=result["threat_types"],
+            recommendations=result.get("recommendations", {})
         )
         db.add(db_msg)
     
