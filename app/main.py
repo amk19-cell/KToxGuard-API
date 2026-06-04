@@ -33,7 +33,6 @@ last_collect_time = datetime.now() - timedelta(hours=1)
 async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.create_all)
-    # Scheduler désactivé pour éviter les crashs
 
 @app.get("/")
 def root():
@@ -62,8 +61,15 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return result
 
-@app.api_route("/collect", methods=["POST", "GET"])
-async def trigger_collect(db: AsyncSession = Depends(get_db)):
+@app.get("/collect")
+async def collect_get(db: AsyncSession = Depends(get_db)):
+    return await trigger_collect(db)
+
+@app.post("/collect")
+async def collect_post(db: AsyncSession = Depends(get_db)):
+    return await trigger_collect(db)
+
+async def trigger_collect(db: AsyncSession):
     global last_collect_time
     now = datetime.now()
     comments = await fetch_reddit_comments("kpop", last_collect_time)
@@ -80,10 +86,6 @@ async def trigger_collect(db: AsyncSession = Depends(get_db)):
             recommendations=result.get("recommendations", {}),
             lang="en"
         )
-        db.add(db_msg)
-    await db.commit()
-    last_collect_time = now
-    return {"status": "ok", "collected": len(comments)}
         db.add(db_msg)
     await db.commit()
     last_collect_time = now
