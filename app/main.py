@@ -43,6 +43,14 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+    @app.get("/artists")
+async def get_artists():
+    from pathlib import Path
+    import json
+    path = Path(__file__).parent / "artists.json"
+    with open(path, "r", encoding="utf-8") as f:
+        artists = json.load(f)
+    return artists
 
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
