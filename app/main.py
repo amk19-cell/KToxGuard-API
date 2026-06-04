@@ -25,7 +25,6 @@ class MessageIn(BaseModel):
     platform: Optional[str] = None
     author: Optional[str] = None
     ip_address: Optional[str] = None
-    lang: Optional[str] = "en"
 
 last_collect_time = datetime.now() - timedelta(hours=1)
 
@@ -44,7 +43,7 @@ def health():
 
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
-    result = detect_toxicity(msg.text, msg.lang)
+    result = detect_toxicity(msg.text)
     db_msg = models.Message(
         text=msg.text,
         platform=msg.platform,
@@ -66,7 +65,7 @@ async def trigger_collect(db: AsyncSession = Depends(get_db)):
     now = datetime.now()
     comments = await fetch_reddit_comments("kpop", last_collect_time)
     for comment in comments:
-        result = detect_toxicity(comment["text"], "en")
+        result = detect_toxicity(comment["text"])
         db_msg = models.Message(
             text=comment["text"],
             platform=comment["platform"],
