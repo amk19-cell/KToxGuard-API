@@ -1,0 +1,74 @@
+{
+  "death_threat": {
+    "title": "⚠️ Death threat detected",
+    "legal": "In South Korea, death threats are punishable under Article 283 of the Criminal Code (up to 3 years in prison). Keep evidence: screenshots, URL, timestamp, username. File a report online at the Cyber Bureau of the Korean National Police Agency (https://ecrm.police.go.kr). Report the threat to the platform (YouTube, Twitter, etc.) using their harassment/death threat forms.",
+    "psychological": "Do not leave the victim alone. Immediately inform their manager and security personnel. Speak gently: 'We received a worrying message, but we are taking all measures to protect you. You are not alone.' Avoid showing them the screen. Offer professional psychological support (helpline 1393).",
+    "actions": [
+      "Report to the platform",
+      "Report to police (112)",
+      "Save evidence",
+      "Inform manager",
+      "Do not leave the victim alone today"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "doxxing": {
+    "title": "⚠️ Personal information leak (doxxing)",
+    "legal": "Disclosing personal information without consent is illegal in South Korea (Act on Promotion of Information and Communications Network Utilization and Information Protection). File a complaint with the cybercrime bureau. Request the platform to remove the information immediately.",
+    "psychological": "Change your passwords. Enable two-factor authentication. Do not share your location. Contact a trusted person for support. Helpline 1393 for cyber harassment.",
+    "actions": [
+      "Request removal from platform",
+      "Change passwords",
+      "Enable 2FA",
+      "File a police report"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "school_bullying": {
+    "title": "⚠️ School bullying detected",
+    "legal": "South Korea's Act on the Prevention of School Violence provides sanctions. Report to the school or the local Office of Education. The school must investigate within 10 days.",
+    "psychological": "Talk to a teacher or school counselor. You are not alone. Helpline 117 for youth protection. Do not respond to bullies; keep evidence.",
+    "actions": [
+      "Report to school",
+      "Contact Office of Education",
+      "Save conversations",
+      "Talk to a counselor"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "sexual_harassment": {
+    "title": "⚠️ Sexual harassment detected",
+    "legal": "Online sexual harassment is punishable by law (fines or imprisonment). Preserve evidence. File a complaint with the cybercrime bureau. Contact the Korean Women's Hotline 1366.",
+    "psychological": "Do not blame yourself. Seek support from a trusted person. Contact the Sexual Violence Counseling Center (1366). Avoid engaging with the harasser.",
+    "actions": [
+      "Report to platform",
+      "File police complaint",
+      "Contact 1366",
+      "Save evidence"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "hate_speech": {
+    "title": "⚠️ Hate speech detected",
+    "legal": "Hate speech can be reported to the Korean National Human Rights Commission. Platform terms of service prohibit hate speech; report the content.",
+    "psychological": "Do not engage with haters. Block and report. Surround yourself with supportive people. Take a break from social media if needed.",
+    "actions": [
+      "Report to platform",
+      "Block the user",
+      "Document the speech",
+      "Seek support"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "default": {
+    "title": "⚠️ Toxic content detected",
+    "legal": "Preserve evidence (screenshots, URLs). Report the content to the platform. If you feel in danger, contact the police (112).",
+    "psychological": "Take care of yourself. Talk to someone you trust. Helpline 1393 is available for cyber harassment.",
+    "actions": [
+      "Save evidence",
+      "Report to platform",
+      "Talk to a trusted person"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  }
+}
