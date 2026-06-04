@@ -1,0 +1,74 @@
+{
+  "death_threat": {
+    "title": "⚠️ Menace de mort détectée",
+    "legal": "En Corée du Sud, les menaces de mort sont punies par la loi (article 283 du Code pénal, jusqu'à 3 ans de prison). Conservez les preuves (captures d'écran, URL, horodatage, pseudo). Signalez en ligne sur le site du Cyber Bureau de la police nationale coréenne (https://ecrm.police.go.kr). Signalez également à la plateforme (YouTube, Twitter, etc.).",
+    "psychological": "Ne laissez pas la victime seule. Prévenez immédiatement son manager et son agent de sécurité. Dites-lui doucement : « Nous avons reçu un message inquiétant, mais nous prenons toutes les mesures pour te protéger. Tu n’es pas seul(e). » Évitez de lui montrer l’écran. Proposez un soutien psychologique (ligne 1393).",
+    "actions": [
+      "Signaler à la plateforme",
+      "Signaler à la police (112)",
+      "Conserver les preuves",
+      "Informer le manager",
+      "Ne pas laisser la victime seule aujourd'hui"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "doxxing": {
+    "title": "⚠️ Fuite d'informations personnelles",
+    "legal": "La divulgation d'informations personnelles sans consentement est illégale en Corée. Portez plainte au bureau de cybercriminalité. Demandez le retrait immédiat des informations à la plateforme.",
+    "psychological": "Changez vos mots de passe. Activez l'authentification à deux facteurs. Ne partagez pas votre localisation. Contactez une personne de confiance. Ligne d'aide 1393.",
+    "actions": [
+      "Demander le retrait à la plateforme",
+      "Changer les mots de passe",
+      "Activer la 2FA",
+      "Déposer une plainte"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "school_bullying": {
+    "title": "⚠️ Harcèlement scolaire détecté",
+    "legal": "La loi coréenne sur la prévention de la violence scolaire prévoit des sanctions. Signalez à l'école ou au bureau local d'éducation. L'école doit enquêter dans les 10 jours.",
+    "psychological": "Parlez à un enseignant ou à un conseiller scolaire. Vous n'êtes pas seul(e). Ligne d'aide 117 (protection des jeunes). Ne répondez pas aux harceleurs ; conservez les preuves.",
+    "actions": [
+      "Signaler à l'école",
+      "Contacter le bureau d'éducation",
+      "Conserver les conversations",
+      "Parler à un conseiller"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "sexual_harassment": {
+    "title": "⚠️ Harcèlement sexuel détecté",
+    "legal": "Le harcèlement sexuel en ligne est puni par la loi. Conservez les preuves. Portez plainte au bureau de cybercriminalité. Contactez la ligne d'aide 1366.",
+    "psychological": "Ne vous culpabilisez pas. Demandez du soutien à une personne de confiance. Contactez le centre de soutien aux victimes d'agression sexuelle (1366). N'interagissez pas avec l'agresseur.",
+    "actions": [
+      "Signaler à la plateforme",
+      "Déposer plainte",
+      "Contacter le 1366",
+      "Conserver les preuves"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "hate_speech": {
+    "title": "⚠️ Discours de haine détecté",
+    "legal": "Les discours de haine peuvent être signalés à la Commission nationale des droits de l'homme. Les conditions d'utilisation des plateformes interdisent les discours de haine ; signalez le contenu.",
+    "psychological": "Ne répondez pas aux harceleurs. Bloquelez et signalez. Entourez-vous de personnes bienveillantes. Faites une pause des réseaux sociaux si nécessaire.",
+    "actions": [
+      "Signaler à la plateforme",
+      "Bloquer l'utilisateur",
+      "Documenter le discours",
+      "Chercher du soutien"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  },
+  "default": {
+    "title": "⚠️ Contenu toxique détecté",
+    "legal": "Conservez les preuves (captures d'écran, URL). Signalez le contenu à la plateforme. Si vous vous sentez en danger, contactez la police (112).",
+    "psychological": "Prenez soin de vous. Parlez-en à quelqu'un de confiance. La ligne d'aide 1393 est disponible pour le cyberharcèlement.",
+    "actions": [
+      "Conserver les preuves",
+      "Signaler à la plateforme",
+      "Parler à une personne de confiance"
+    ],
+    "creaven": "https://creaven.pages.dev"
+  }
+}
