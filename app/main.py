@@ -2,10 +2,12 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 import json
 import os
+import requests
+from googleapiclient.discovery import build
 
 app = FastAPI(title="KToxGuard API")
 
@@ -55,7 +57,7 @@ def init_db():
 
 init_db()
 
-# ---------- Détection simple ----------
+# ---------- Détection ----------
 def simple_detect(text: str, lang: str):
     toxic_words = ["바보", "병신", "시발", "죽어", "쓰레기", "stupid", "kill", "hate", "fuck", "idiot", "die"]
     score = 0.8 if any(w in text.lower() for w in toxic_words) else 0.0
@@ -67,6 +69,120 @@ def simple_detect(text: str, lang: str):
         "threat_types": [],
         "recommendations": {}
     }
+
+# ---------- Collecte YouTube ----------
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY) if YOUTUBE_API_KEY else None
+
+def fetch_youtube_comments(video_id):
+    """Récupère les commentaires d'une vidéo YouTube (max 100)."""
+    if not youtube:
+        return []
+    try:
+        request = youtube.commentThreads().list(
+            part="snippet",
+            videoId=video_id,
+            maxResults=100,
+            textFormat="plainText"
+        )
+        response = request.execute()
+        comments = []
+        for item in response.get("items", []):
+            snippet = item["snippet"]["topLevelComment"]["snippet"]
+            text = snippet.get("textDisplay", "")
+            author = snippet.get("authorDisplayName", "unknown")
+            # On ne filtre pas par langue (beaucoup de commentaires k-pop sont en anglais/coréen)
+            comments.append({
+                "text": text,
+                "platform": "youtube",
+                "author": author,
+                "timestamp": datetime.fromtimestamp(int(snippet.get("publishedAt", "1970-01-01T00:00:00Z").replace("Z", "").replace("T", " ")[:19])),
+                "lang": "en"  # on peut améliorer plus tard
+            })
+        return comments
+    except Exception as e:
+        print(f"Erreur YouTube: {e}")
+        return []
+
+# ---------- Collecte Reddit ----------
+KEYWORDS = [
+    "bts", "bangtan", "seventeen", "txt", "newjeans",
+    "방탄소년단", "세븐틴", "투모로우바이투게더", "뉴진스",
+    "jimin", "jungkook", "v", "suga", "rm", "jin", "jhope",
+    "vernon", "mingyu", "wonwoo", "woozi", "dk", "hoshi",
+    "soobin", "yeonjun", "beomgyu", "taehyun", "hueningkai",
+    "minji", "hanni", "danielle", "haerin", "hyein"
+]
+
+def fetch_reddit_comments():
+    url = "https://www.reddit.com/r/kpop/comments.json?limit=100"
+    headers = {"User-Agent": "KToxGuard/1.0"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        comments = []
+        for child in data.get("data", {}).get("children", []):
+            cd = child.get("data", {})
+            body = cd.get("body", "")
+            if any(kw in body.lower() for kw in KEYWORDS):
+                comments.append({
+                    "text": body,
+                    "platform": "reddit",
+                    "author": cd.get("author", "unknown"),
+                    "timestamp": datetime.fromtimestamp(cd.get("created_utc", 0)),
+                    "lang": "en"
+                })
+        return comments
+    except Exception as e:
+        print(f"Erreur Reddit: {e}")
+        return []
+
+# ---------- Gestion du dernier timestamp de collecte ----------
+LAST_COLLECT_FILE = "last_collect.txt"
+
+def get_last_collect_time():
+    if os.path.exists(LAST_COLLECT_FILE):
+        with open(LAST_COLLECT_FILE, "r") as f:
+            try:
+                return datetime.fromisoformat(f.read().strip())
+            except:
+                return datetime.now() - timedelta(hours=1)
+    return datetime.now() - timedelta(hours=1)
+
+def save_last_collect_time(dt):
+    with open(LAST_COLLECT_FILE, "w") as f:
+        f.write(dt.isoformat())
+
+def collect_new_comments():
+    last = get_last_collect_time()
+    now = datetime.now()
+    all_comments = []
+    # Reddit
+    all_comments.extend(fetch_reddit_comments())
+    # YouTube (sur quelques vidéos populaires)
+    if youtube:
+        # Liste de vidéos k-pop populaires (vous pouvez changer)
+        video_ids = ["d3w2rHl4P8E", "GDJilJ0n1fE", "kXpZkL5vM2M", "9S0x5eJm6qE"]  # exemples
+        for vid in video_ids:
+            all_comments.extend(fetch_youtube_comments(vid))
+    # Filtrer les commentaires plus récents que `last`
+    new_comments = [c for c in all_comments if c["timestamp"] > last]
+    if not new_comments:
+        return 0
+    conn = get_db()
+    for c in new_comments:
+        result = simple_detect(c["text"], c["lang"])
+        conn.execute(
+            "INSERT INTO messages (text, platform, author, timestamp, label, confidence, keywords_found, threat_types, recommendations, lang) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (c["text"], c["platform"], c["author"], c["timestamp"], result["label"], result["confidence"],
+             json.dumps(result["keywords_found"]), json.dumps(result["threat_types"]), json.dumps(result["recommendations"]), c["lang"])
+        )
+    conn.commit()
+    conn.close()
+    save_last_collect_time(now)
+    return len(new_comments)
 
 # ---------- Endpoints ----------
 @app.get("/")
@@ -130,8 +246,8 @@ def get_messages(limit: int = 50, skip: int = 0):
 
 @app.api_route("/collect", methods=["GET", "POST"])
 def collect():
-    # Placeholder pour la collecte Reddit (à implémenter plus tard)
-    return {"status": "ok", "collected": 0}
+    count = collect_new_comments()
+    return {"status": "ok", "collected": count}
 
 @app.get("/artists")
 def get_artists():
@@ -140,4 +256,4 @@ def get_artists():
         {"id": 2, "name": "SEVENTEEN", "members": 13, "photo": "https://cdn.britannica.com/39/236339-050-2C6CE9A7/K-pop-boy-band-Seventeen-2022.jpg"},
         {"id": 3, "name": "TXT", "members": 5, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/TXT_logo.svg/200px-TXT_logo.svg.png"},
         {"id": 4, "name": "NewJeans", "members": 5, "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/NewJeans_logo.svg/200px-NewJeans_logo.svg.png"}
-    ]
+        ]
