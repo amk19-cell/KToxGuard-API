@@ -1,13 +1,11 @@
-
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-import psycopg2
-from psycopg2.extras import RealDictCursor
-import os
-import json
 from datetime import datetime
+import sqlite3
+import json
+import os
 
 app = FastAPI(title="KToxGuard API")
 
@@ -26,44 +24,33 @@ class MessageIn(BaseModel):
     ip_address: Optional[str] = None
     lang: Optional[str] = "en"
 
-# ---------- Connexion base de données ----------
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-# Nettoyer l'URL : enlever ?sslmode=...
-if "?sslmode=" in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.split("?sslmode=")[0]
-# Convertir postgresql:// en postgresql:// (sync)
-if DATABASE_URL.startswith("postgresql+asyncpg://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
-elif DATABASE_URL.startswith("postgresql://"):
-    pass  # bon format
-else:
-    # Fallback pour les tests
-    DATABASE_URL = "postgresql://postgres:password@localhost:5432/ktoxguard"
+# ---------- Base de données SQLite ----------
+DB_FILE = "database.sqlite"
 
-def get_db_connection():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+def get_db():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
+    conn = get_db()
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS messages (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             text TEXT NOT NULL,
             platform TEXT,
             author TEXT,
             ip_address TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             label TEXT,
-            confidence FLOAT,
+            confidence REAL,
             keywords_found TEXT,
             threat_types TEXT,
             recommendations TEXT,
             lang TEXT DEFAULT 'en'
         )
-    """)
+    ''')
     conn.commit()
-    cur.close()
     conn.close()
 
 init_db()
@@ -93,15 +80,13 @@ def health():
 @app.post("/analyze")
 def analyze(msg: MessageIn):
     result = simple_detect(msg.text, msg.lang)
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO messages (text, platform, author, ip_address, label, confidence, keywords_found, threat_types, recommendations, lang)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (msg.text, msg.platform, msg.author, msg.ip_address, result["label"], result["confidence"],
-          json.dumps(result["keywords_found"]), json.dumps(result["threat_types"]), json.dumps(result["recommendations"]), msg.lang))
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO messages (text, platform, author, ip_address, label, confidence, keywords_found, threat_types, recommendations, lang) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (msg.text, msg.platform, msg.author, msg.ip_address, result["label"], result["confidence"],
+         json.dumps(result["keywords_found"]), json.dumps(result["threat_types"]), json.dumps(result["recommendations"]), msg.lang)
+    )
     conn.commit()
-    cur.close()
     conn.close()
     return result
 
@@ -110,51 +95,42 @@ def import_messages(messages: List[MessageIn]):
     imported = 0
     for msg in messages:
         result = simple_detect(msg.text, msg.lang)
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO messages (text, platform, author, ip_address, label, confidence, keywords_found, threat_types, recommendations, lang)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (msg.text, msg.platform, msg.author, msg.ip_address, result["label"], result["confidence"],
-              json.dumps(result["keywords_found"]), json.dumps(result["threat_types"]), json.dumps(result["recommendations"]), msg.lang))
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO messages (text, platform, author, ip_address, label, confidence, keywords_found, threat_types, recommendations, lang) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (msg.text, msg.platform, msg.author, msg.ip_address, result["label"], result["confidence"],
+             json.dumps(result["keywords_found"]), json.dumps(result["threat_types"]), json.dumps(result["recommendations"]), msg.lang)
+        )
         conn.commit()
-        cur.close()
         conn.close()
         imported += 1
     return {"imported": imported, "received": len(messages)}
 
 @app.get("/stats")
 def get_stats():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) as total FROM messages")
-    total = cur.fetchone()["total"]
-    cur.execute("SELECT COUNT(*) as toxic FROM messages WHERE label = 'toxique'")
-    toxic = cur.fetchone()["toxic"]
-    toxic_percentage = round((toxic / total) * 100, 2) if total else 0
-    cur.close()
+    conn = get_db()
+    total = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    toxic = conn.execute("SELECT COUNT(*) FROM messages WHERE label = 'toxique'").fetchone()[0]
     conn.close()
+    percent = round((toxic / total) * 100, 2) if total else 0
     return {
         "total_messages": total,
         "toxic_count": toxic,
-        "toxic_percentage": toxic_percentage,
+        "toxic_percentage": percent,
         "by_threat_type": {},
         "top_keywords": {}
     }
 
 @app.get("/messages")
 def get_messages(limit: int = 50, skip: int = 0):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM messages ORDER BY timestamp DESC LIMIT %s OFFSET %s", (limit, skip))
-    messages = cur.fetchall()
-    cur.close()
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM messages ORDER BY timestamp DESC LIMIT ? OFFSET ?", (limit, skip)).fetchall()
     conn.close()
-    return messages
+    return [dict(row) for row in rows]
 
 @app.api_route("/collect", methods=["GET", "POST"])
 def collect():
-    # Pour l'instant, on ne collecte rien, juste pour la compatibilité cron
+    # Placeholder pour la collecte Reddit (à implémenter plus tard)
     return {"status": "ok", "collected": 0}
 
 @app.get("/artists")
