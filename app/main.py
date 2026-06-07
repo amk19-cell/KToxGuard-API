@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
@@ -62,6 +62,27 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     db.add(db_msg)
     await db.commit()
     return result
+
+@app.post("/import")
+async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(get_db)):
+    count = 0
+    for msg in messages:
+        result = detect_toxicity(msg.text, msg.lang)
+        db_msg = models.Message(
+            text=msg.text,
+            platform=msg.platform,
+            author=msg.author,
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=result["keywords_found"],
+            threat_types=result["threat_types"],
+            recommendations=result.get("recommendations", {}),
+            lang=msg.lang
+        )
+        db.add(db_msg)
+        count += 1
+    await db.commit()
+    return {"imported": count}
 
 @app.get("/collect")
 async def collect_get(db: AsyncSession = Depends(get_db)):
