@@ -65,24 +65,29 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
 
 @app.post("/import")
 async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(get_db)):
+    """Importe une liste de messages en masse."""
     count = 0
     for msg in messages:
-        result = detect_toxicity(msg.text, msg.lang)
-        db_msg = models.Message(
-            text=msg.text,
-            platform=msg.platform,
-            author=msg.author,
-            label=result["label"],
-            confidence=result["confidence"],
-            keywords_found=result["keywords_found"],
-            threat_types=result["threat_types"],
-            recommendations=result.get("recommendations", {}),
-            lang=msg.lang
-        )
-        db.add(db_msg)
-        count += 1
+        try:
+            result = detect_toxicity(msg.text, msg.lang)
+            db_msg = models.Message(
+                text=msg.text,
+                platform=msg.platform,
+                author=msg.author,
+                ip_address=msg.ip_address,
+                label=result["label"],
+                confidence=result["confidence"],
+                keywords_found=result["keywords_found"],
+                threat_types=result["threat_types"],
+                recommendations=result.get("recommendations", {}),
+                lang=msg.lang
+            )
+            db.add(db_msg)
+            count += 1
+        except Exception as e:
+            print(f"Erreur sur message: {msg.text[:50]} - {e}")
     await db.commit()
-    return {"imported": count}
+    return {"imported": count, "received": len(messages)}
 
 @app.get("/collect")
 async def collect_get(db: AsyncSession = Depends(get_db)):
