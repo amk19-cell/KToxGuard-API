@@ -90,7 +90,32 @@ async def trigger_collect(db: AsyncSession):
     await db.commit()
     last_collect_time = now
     return {"status": "ok", "collected": len(comments)}
-
+@app.get("/collect/backfill")
+async def backfill_collect(db: AsyncSession = Depends(get_db), limit: int = 1000):
+    """
+    Remplit la base avec les derniers commentaires (max 1000).
+    Limitation de l'API Reddit : ne peut pas remonter avant les 1000 commentaires les plus récents.
+    """
+    from app.collectors import fetch_reddit_comments_paginated
+    comments = await fetch_reddit_comments_paginated("kpop", limit=min(limit, 1000))
+    count = 0
+    for comment in comments:
+        result = detect_toxicity(comment["text"], "en")
+        db_msg = models.Message(
+            text=comment["text"],
+            platform=comment["platform"],
+            author=comment["author"],
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=result["keywords_found"],
+            threat_types=result["threat_types"],
+            recommendations=result.get("recommendations", {}),
+            lang="en"
+        )
+        db.add(db_msg)
+        count += 1
+    await db.commit()
+    return {"status": "ok", "collected": count, "limit_requested": limit}
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
     total_result = await db.execute(select(func.count(models.Message.id)))
