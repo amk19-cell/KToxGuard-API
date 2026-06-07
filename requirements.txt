@@ -1,7 +1,4 @@
 fastapi
 uvicorn
 pydantic
-sqlalchemy
-asyncpg
-aiohttp
-apscheduler
+psycopg2-binary
