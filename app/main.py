@@ -93,9 +93,42 @@ async def trigger_collect(db: AsyncSession):
 
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    total_result = await db.execute(select(func.count(models.Message.id)))
-    total = total_result.scalar() or 0
-    if total == 0:
+    try:
+        total_result = await db.execute(select(func.count(models.Message.id)))
+        total = total_result.scalar() or 0
+        if total == 0:
+            return {
+                "total_messages": 0,
+                "toxic_count": 0,
+                "toxic_percentage": 0.0,
+                "by_threat_type": {},
+                "top_keywords": {}
+            }
+        toxic_result = await db.execute(select(func.count()).where(models.Message.label == "toxique"))
+        toxic_count = toxic_result.scalar() or 0
+        toxic_percentage = round((toxic_count / total) * 100, 2)
+        threat_result = await db.execute(select(models.Message.threat_types))
+        threat_counts = {}
+        for row in threat_result:
+            if row[0]:
+                for t in row[0]:
+                    threat_counts[t] = threat_counts.get(t, 0) + 1
+        kw_result = await db.execute(select(models.Message.keywords_found))
+        kw_counts = {}
+        for row in kw_result:
+            if row[0]:
+                for kw in row[0]:
+                    kw_counts[kw] = kw_counts.get(kw, 0) + 1
+        top_keywords = dict(sorted(kw_counts.items(), key=lambda x: x[1], reverse=True)[:5])
+        return {
+            "total_messages": total,
+            "toxic_count": toxic_count,
+            "toxic_percentage": toxic_percentage,
+            "by_threat_type": threat_counts,
+            "top_keywords": top_keywords
+        }
+    except Exception:
+        # Retourne des valeurs par défaut si la requête échoue
         return {
             "total_messages": 0,
             "toxic_count": 0,
@@ -103,29 +136,6 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "by_threat_type": {},
             "top_keywords": {}
         }
-    toxic_result = await db.execute(select(func.count()).where(models.Message.label == "toxique"))
-    toxic_count = toxic_result.scalar() or 0
-    toxic_percentage = round((toxic_count / total) * 100, 2)
-    threat_result = await db.execute(select(models.Message.threat_types))
-    threat_counts = {}
-    for row in threat_result:
-        if row[0]:
-            for t in row[0]:
-                threat_counts[t] = threat_counts.get(t, 0) + 1
-    kw_result = await db.execute(select(models.Message.keywords_found))
-    kw_counts = {}
-    for row in kw_result:
-        if row[0]:
-            for kw in row[0]:
-                kw_counts[kw] = kw_counts.get(kw, 0) + 1
-    top_keywords = dict(sorted(kw_counts.items(), key=lambda x: x[1], reverse=True)[:5])
-    return {
-        "total_messages": total,
-        "toxic_count": toxic_count,
-        "toxic_percentage": toxic_percentage,
-        "by_threat_type": threat_counts,
-        "top_keywords": top_keywords
-    }
 
 @app.get("/messages")
 async def get_messages(limit: int = 50, skip: int = 0, db: AsyncSession = Depends(get_db)):
