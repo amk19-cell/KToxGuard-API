@@ -9,6 +9,8 @@ from app.detector import detect_toxicity
 from app.database import engine, get_db
 from app import models
 from app.collectors import fetch_reddit_comments
+import json
+from pathlib import Path
 
 app = FastAPI(title="KToxGuard API")
 
@@ -128,7 +130,6 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "top_keywords": top_keywords
         }
     except Exception:
-        # Retourne des valeurs par défaut si la requête échoue
         return {
             "total_messages": 0,
             "toxic_count": 0,
@@ -147,3 +148,12 @@ async def get_messages(limit: int = 50, skip: int = 0, db: AsyncSession = Depend
     )
     messages = result.scalars().all()
     return messages
+
+@app.get("/artists")
+async def get_artists():
+    path = Path(__file__).parent / "artists.json"
+    if not path.exists():
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        artists = json.load(f)
+    return artists
