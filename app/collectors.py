@@ -1,6 +1,5 @@
 import asyncio
 import discord
-from telethon import TelegramClient
 import requests
 from datetime import datetime
 import os
@@ -10,14 +9,9 @@ import sqlite3
 # ---------- Configuration ----------
 DB_FILE = "database.sqlite"
 
-# Discord : on utilise maintenant des noms de salons (pas des IDs)
+# Discord
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
-DISCORD_CHANNEL_NAMES = os.environ.get("DISCORD_CHANNEL_NAMES", "")  # noms séparés par des virgules
-
-# Telegram (optionnel)
-TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "")
-TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
-TELEGRAM_CHANNELS = os.environ.get("TELEGRAM_CHANNELS", "")
+DISCORD_CHANNEL_NAMES = os.environ.get("DISCORD_CHANNEL_NAMES", "KToxguards Tests")
 
 # ---------- Fonction de détection ----------
 def simple_detect(text: str, lang: str = "en"):
@@ -66,40 +60,34 @@ def collect_discord():
         print("Discord non configuré (token ou noms de salons manquants)")
         return 0
     client = DiscordClient(intents=discord.Intents.default())
-    # Activer l'intent Message Content (indispensable)
     client.intents.message_content = True
     client.run(DISCORD_BOT_TOKEN)
-    return 1  # retour simple
-
-# ---------- Collecte Telegram (optionnelle) ----------
-async def collect_telegram_async():
-    if not TELEGRAM_API_ID or not TELEGRAM_API_HASH or not TELEGRAM_CHANNELS:
-        print("Telegram non configuré")
-        return
-    client = TelegramClient('ktoxguard_session', int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
-    await client.start()
-    channels = [c.strip() for c in TELEGRAM_CHANNELS.split(",") if c.strip()]
-    for entity_name in channels:
-        try:
-            entity = await client.get_entity(entity_name)
-            async for message in client.iter_messages(entity, limit=100):
-                if message.text:
-                    save_message(message.text, "telegram", str(message.sender_id), message.date, "en")
-        except Exception as e:
-            print(f"Erreur sur {entity_name}: {e}")
-    await client.disconnect()
-
-def collect_telegram():
-    asyncio.run(collect_telegram_async())
     return 1
 
 # ---------- Collecte Reddit ----------
 KEYWORDS = [
+    # Groupes
     "bts", "bangtan", "seventeen", "txt", "newjeans",
     "방탄소년단", "세븐틴", "투모로우바이투게더", "뉴진스",
+    # BTS
     "jimin", "jungkook", "v", "suga", "rm", "jin", "jhope",
-    "vernon", "mingyu", "wonwoo", "woozi", "dk", "hoshi",
+    # SEVENTEEN (13 membres)
+    "scoups", "s.coups", "에스쿱스",
+    "jeonghan", "정한",
+    "joshua", "조슈아",
+    "jun", "준",
+    "hoshi", "호시",
+    "wonwoo", "원우",
+    "woozi", "우지",
+    "dk", "도겸", "dokyeom",
+    "mingyu", "민규",
+    "the8", "디에잇", "minghao",
+    "seungkwan", "승관",
+    "vernon", "버논",
+    "dino", "디노",
+    # TXT
     "soobin", "yeonjun", "beomgyu", "taehyun", "hueningkai",
+    # NewJeans
     "minji", "hanni", "danielle", "haerin", "hyein"
 ]
 
@@ -128,5 +116,4 @@ def collect_all():
     total = 0
     total += collect_reddit()
     total += collect_discord()
-    total += collect_telegram()
     return total
