@@ -8,7 +8,6 @@ from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 from datetime import datetime, timedelta
 import os
 import json
-import asyncio
 from pathlib import Path
 
 # ========== BASE DE DONNÉES ==========
@@ -49,7 +48,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ========== MODÈLES PYDANTIC ==========
+# ========== MODÈLES ==========
 class MessageIn(BaseModel):
     text: str
     platform: Optional[str] = None
@@ -57,9 +56,9 @@ class MessageIn(BaseModel):
     ip_address: Optional[str] = None
     lang: Optional[str] = "en"
 
-# ========== DÉTECTION SIMPLE ==========
+# ========== DÉTECTION ==========
 def simple_detect(text: str, lang: str = "en"):
-    toxic_words = ["바보", "병신", "시발", "죽어", "쓰레기", "stupid", "kill", "hate", "fuck", "idiot", "die", "trash", "loser"]
+    toxic_words = ["바보", "병신", "시발", "죽어", "쓰레기", "stupid", "kill", "hate", "fuck", "idiot", "die", "trash"]
     score = 0.8 if any(w in text.lower() for w in toxic_words) else 0.0
     label = "toxique" if score >= 0.7 else "neutre"
     return {
@@ -70,19 +69,41 @@ def simple_detect(text: str, lang: str = "en"):
         "recommendations": {}
     }
 
-# ========== COLLECTEURS ==========
-from app.collectors import collect_all_sources
+# ========== REDDIT (SANS COLLECTE EXTERNE COMPLEXE) ==========
+async def fetch_reddit_comments(subreddit: str, since_time: datetime):
+    import aiohttp
+    url = f"https://www.reddit.com/r/{subreddit}/comments.json?limit=30"
+    headers = {"User-Agent": "KToxGuard/1.0"}
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, headers=headers, timeout=10) as response:
+                if response.status != 200:
+                    return []
+                data = await response.json()
+                comments = []
+                for child in data.get("data", {}).get("children", []):
+                    cd = child.get("data", {})
+                    created = datetime.fromtimestamp(cd.get("created_utc", 0))
+                    if created > since_time:
+                        text = cd.get("body", "")
+                        comments.append({
+                            "text": text,
+                            "platform": "reddit",
+                            "author": cd.get("author", "unknown"),
+                            "timestamp": created
+                        })
+                return comments
+        except Exception as e:
+            print(f"[Reddit] Erreur: {e}")
+            return []
 
+# ========== COLLECTE ==========
 last_collect_time = datetime.now() - timedelta(hours=1)
 
 async def trigger_collect(db: AsyncSession):
     global last_collect_time
     now = datetime.now()
-    try:
-        comments = await collect_all_sources(last_collect_time)
-    except Exception as e:
-        print(f"[Collect] Erreur: {e}")
-        comments = []
+    comments = await fetch_reddit_comments("kpop", last_collect_time)
     for comment in comments:
         result = simple_detect(comment["text"], "en")
         db_msg = Message(
@@ -169,43 +190,9 @@ async def collect_post(db: AsyncSession = Depends(get_db)):
 
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    try:
-        total_result = await db.execute(select(func.count(Message.id)))
-        total = total_result.scalar() or 0
-        if total == 0:
-            return {
-                "total_messages": 0,
-                "toxic_count": 0,
-                "toxic_percentage": 0.0,
-                "by_threat_type": {},
-                "top_keywords": {}
-            }
-        toxic_result = await db.execute(select(func.count()).where(Message.label == "toxique"))
-        toxic_count = toxic_result.scalar() or 0
-        toxic_percentage = round((toxic_count / total) * 100, 2)
-        # Calculs simplifiés pour les types de menace et mots-clés
-        threat_result = await db.execute(select(Message.threat_types))
-        threat_counts = {}
-        for row in threat_result:
-            if row[0]:
-                for t in json.loads(row[0]):
-                    threat_counts[t] = threat_counts.get(t, 0) + 1
-        kw_result = await db.execute(select(Message.keywords_found))
-        kw_counts = {}
-        for row in kw_result:
-            if row[0]:
-                for kw in json.loads(row[0]):
-                    kw_counts[kw] = kw_counts.get(kw, 0) + 1
-        top_keywords = dict(sorted(kw_counts.items(), key=lambda x: x[1], reverse=True)[:5])
-        return {
-            "total_messages": total,
-            "toxic_count": toxic_count,
-            "toxic_percentage": toxic_percentage,
-            "by_threat_type": threat_counts,
-            "top_keywords": top_keywords
-        }
-    except Exception as e:
-        print(f"[Stats] Erreur: {e}")
+    total_result = await db.execute(select(func.count(Message.id)))
+    total = total_result.scalar() or 0
+    if total == 0:
         return {
             "total_messages": 0,
             "toxic_count": 0,
@@ -213,6 +200,16 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "by_threat_type": {},
             "top_keywords": {}
         }
+    toxic_result = await db.execute(select(func.count()).where(Message.label == "toxique"))
+    toxic_count = toxic_result.scalar() or 0
+    toxic_percentage = round((toxic_count / total) * 100, 2)
+    return {
+        "total_messages": total,
+        "toxic_count": toxic_count,
+        "toxic_percentage": toxic_percentage,
+        "by_threat_type": {},
+        "top_keywords": {}
+    }
 
 @app.get("/messages")
 async def get_messages(limit: int = 50, skip: int = 0, db: AsyncSession = Depends(get_db)):
