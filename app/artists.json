@@ -2,29 +2,36 @@
   {
     "id": 1,
     "name": "BTS",
-    "members": 7,
-    "photo": "https://cdn.britannica.com/77/213477-050-32E30A3D/BTS-South-Korean-boy-band-June-6-2019.jpg",
-    "keywords": ["bts", "방탄소년단"]
+    "agency": "HYBE",
+    "members": ["RM", "Jin", "Suga", "J-Hope", "Jimin", "V", "Jungkook"],
+    "keywords": ["bts", "bangtan", "방탄"]
   },
   {
     "id": 2,
-    "name": "SEVENTEEN",
-    "members": 13,
-    "photo": "https://cdn.britannica.com/39/236339-050-2C6CE9A7/K-pop-boy-band-Seventeen-2022.jpg",
-    "keywords": ["seventeen", "세븐틴"]
+    "name": "BLACKPINK",
+    "agency": "YG Entertainment",
+    "members": ["Jisoo", "Jennie", "Rosé", "Lisa"],
+    "keywords": ["blackpink", "블랙핑크"]
   },
   {
     "id": 3,
-    "name": "TXT",
-    "members": 5,
-    "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/TXT_logo.svg/200px-TXT_logo.svg.png",
-    "keywords": ["txt", "투모로우바이투게더"]
+    "name": "IVE",
+    "agency": "Starship Entertainment",
+    "members": ["Yujin", "Gaeul", "Rei", "Wonyoung", "Liz", "Leeseo"],
+    "keywords": ["ive", "아이브"]
   },
   {
     "id": 4,
-    "name": "NewJeans",
-    "members": 5,
-    "photo": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/NewJeans_logo.svg/200px-NewJeans_logo.svg.png",
-    "keywords": ["newjeans", "뉴진스"]
+    "name": "NMIXX",
+    "agency": "JYP Entertainment",
+    "members": ["Lily", "Haewon", "Sullyoon", "Bae", "Jiwoo", "Kyujin"],
+    "keywords": ["nmixx", "엔믹스"]
+  },
+  {
+    "id": 5,
+    "name": "KATSEYE",
+    "agency": "HYBE / Geffen Records",
+    "members": ["Sophia", "Lara", "Yoonchae", "Megan", "Daniela", "Manon"],
+    "keywords": ["katseye", "캣츠아이"]
   }
 ]
