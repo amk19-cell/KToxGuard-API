@@ -1,119 +1,124 @@
-import asyncio
-import discord
-import requests
+import aiohttp
 from datetime import datetime
-import os
+from typing import List, Dict
+import re
 import json
-import sqlite3
+from pathlib import Path
 
-# ---------- Configuration ----------
-DB_FILE = "database.sqlite"
+# ========== ARTISTES ET MOTS-CLÉS ==========
+ARTIST_FILE = Path(__file__).parent / "artists.json"
+ARTIST_KEYWORDS = []
+if ARTIST_FILE.exists():
+    with open(ARTIST_FILE, "r", encoding="utf-8") as f:
+        artists = json.load(f)
+        for artist in artists:
+            ARTIST_KEYWORDS.extend(artist.get("keywords", []))
+else:
+    # Fallback si le fichier n'existe pas
+    ARTIST_KEYWORDS = ["bts", "blackpink", "ive", "nmixx", "katseye"]
 
-# Discord
-DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
-DISCORD_CHANNEL_NAMES = os.environ.get("DISCORD_CHANNEL_NAMES", "KToxguards Tests")
+# ========== REDDIT (sans filtre de langue) ==========
+async def fetch_reddit_comments(subreddit: str, since_time: datetime) -> List[Dict]:
+    """Récupère les commentaires Reddit depuis since_time, sans filtre de langue."""
+    url = f"https://www.reddit.com/r/{subreddit}/comments.json?limit=30"
+    headers = {"User-Agent": "KToxGuard/1.0 (social listening bot)"}
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, headers=headers, timeout=10) as response:
+                if response.status != 200:
+                    return []
+                data = await response.json()
+                comments = []
+                for child in data.get("data", {}).get("children", []):
+                    comment_data = child.get("data", {})
+                    created_utc = datetime.fromtimestamp(comment_data.get("created_utc", 0))
+                    if created_utc > since_time:
+                        text = comment_data.get("body", "").lower()
+                        # Filtre par mots-clés (toutes langues)
+                        if any(kw in text for kw in ARTIST_KEYWORDS):
+                            comments.append({
+                                "text": comment_data.get("body", ""),
+                                "platform": "reddit",
+                                "author": comment_data.get("author", "unknown"),
+                                "timestamp": created_utc
+                            })
+                return comments
+        except Exception as e:
+            print(f"[Reddit] Erreur: {e}")
+            return []
 
-# ---------- Fonction de détection ----------
-def simple_detect(text: str, lang: str = "en"):
-    toxic_words = ["바보", "병신", "시발", "죽어", "쓰레기", "stupid", "kill", "hate", "fuck", "idiot", "die"]
-    score = 0.8 if any(w in text.lower() for w in toxic_words) else 0.0
-    label = "toxique" if score >= 0.7 else "neutre"
-    return {
-        "label": label,
-        "confidence": score,
-        "keywords_found": [],
-        "threat_types": [],
-        "recommendations": {}
-    }
+# ========== KOREABOO (scraping) ==========
+async def fetch_koreaboo_articles(limit: int = 10) -> List[Dict]:
+    """Scrape les articles récents de Koreaboo et leurs commentaires (simulé)."""
+    url = "https://www.koreaboo.com"
+    headers = {"User-Agent": "KToxGuard/1.0 (social listening bot)"}
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, headers=headers, timeout=15) as response:
+                if response.status != 200:
+                    return []
+                html = await response.text()
+                # Extraction basique des articles (les liens, titres, etc.)
+                # Note : ceci est une version simplifiée, à améliorer avec BeautifulSoup si besoin
+                article_pattern = r'<a href="([^"]+)"[^>]*>([^<]+)</a>'
+                matches = re.findall(article_pattern, html)
+                articles = []
+                for link, title in matches[:limit]:
+                    if "news" in link or "article" in link:
+                        articles.append({
+                            "text": f"[Koreaboo] {title.strip()} - {link}",
+                            "platform": "koreaboo",
+                            "author": "koreaboo",
+                            "timestamp": datetime.now()
+                        })
+                return articles
+        except Exception as e:
+            print(f"[Koreaboo] Erreur: {e}")
+            return []
 
-# ---------- Stockage en base ----------
-def save_message(text, platform, author, timestamp, lang="en"):
-    conn = sqlite3.connect(DB_FILE)
-    result = simple_detect(text, lang)
-    conn.execute(
-        "INSERT INTO messages (text, platform, author, timestamp, label, confidence, keywords_found, threat_types, recommendations, lang) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (text, platform, author, timestamp, result["label"], result["confidence"],
-         json.dumps(result["keywords_found"]), json.dumps(result["threat_types"]), json.dumps(result["recommendations"]), lang)
-    )
-    conn.commit()
-    conn.close()
+# ========== TELEGRAM (préparation) ==========
+# Pour activer Telegram, décommentez les lignes suivantes et ajoutez vos identifiants.
+# Vous devez aussi installer telethon : pip install telethon
+#
+# from telethon import TelegramClient
+#
+# TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID")
+# TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH")
+# TELEGRAM_CHANNELS = os.environ.get("TELEGRAM_CHANNELS", "").split(",")
+#
+# async def fetch_telegram_messages(since_time: datetime) -> List[Dict]:
+#     if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+#         return []
+#     client = TelegramClient('ktoxguard_session', int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
+#     await client.start()
+#     messages = []
+#     for channel in TELEGRAM_CHANNELS:
+#         try:
+#             entity = await client.get_entity(channel.strip())
+#             async for msg in client.iter_messages(entity, offset_date=since_time):
+#                 if msg.text and any(kw in msg.text.lower() for kw in ARTIST_KEYWORDS):
+#                     messages.append({
+#                         "text": msg.text,
+#                         "platform": "telegram",
+#                         "author": str(msg.sender_id),
+#                         "timestamp": msg.date
+#                     })
+#         except Exception as e:
+#             print(f"[Telegram] Erreur sur {channel}: {e}")
+#     await client.disconnect()
+#     return messages
 
-# ---------- Collecte Discord (par NOM de salon) ----------
-class DiscordClient(discord.Client):
-    async def on_ready(self):
-        print(f"Bot Discord connecté en tant que {self.user}")
-        channel_names = [name.strip() for name in DISCORD_CHANNEL_NAMES.split(",") if name.strip()]
-        for guild in self.guilds:
-            for channel_name in channel_names:
-                channel = discord.utils.get(guild.text_channels, name=channel_name)
-                if channel:
-                    print(f"Lecture du salon #{channel.name} sur le serveur {guild.name}")
-                    async for message in channel.history(limit=100):
-                        if message.content:
-                            save_message(message.content, "discord", str(message.author), message.created_at, "en")
-                else:
-                    print(f"Salon '{channel_name}' non trouvé sur le serveur {guild.name}")
-        await self.close()
-
-def collect_discord():
-    if not DISCORD_BOT_TOKEN or not DISCORD_CHANNEL_NAMES:
-        print("Discord non configuré (token ou noms de salons manquants)")
-        return 0
-    client = DiscordClient(intents=discord.Intents.default())
-    client.intents.message_content = True
-    client.run(DISCORD_BOT_TOKEN)
-    return 1
-
-# ---------- Collecte Reddit ----------
-KEYWORDS = [
-    # Groupes
-    "bts", "bangtan", "seventeen", "txt", "newjeans",
-    "방탄소년단", "세븐틴", "투모로우바이투게더", "뉴진스",
-    # BTS
-    "jimin", "jungkook", "v", "suga", "rm", "jin", "jhope",
-    # SEVENTEEN (13 membres)
-    "scoups", "s.coups", "에스쿱스",
-    "jeonghan", "정한",
-    "joshua", "조슈아",
-    "jun", "준",
-    "hoshi", "호시",
-    "wonwoo", "원우",
-    "woozi", "우지",
-    "dk", "도겸", "dokyeom",
-    "mingyu", "민규",
-    "the8", "디에잇", "minghao",
-    "seungkwan", "승관",
-    "vernon", "버논",
-    "dino", "디노",
-    # TXT
-    "soobin", "yeonjun", "beomgyu", "taehyun", "hueningkai",
-    # NewJeans
-    "minji", "hanni", "danielle", "haerin", "hyein"
-]
-
-def collect_reddit():
-    url = "https://www.reddit.com/r/kpop/comments.json?limit=100"
-    headers = {"User-Agent": "KToxGuard/1.0"}
-    try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code != 200:
-            return 0
-        data = resp.json()
-        count = 0
-        for child in data.get("data", {}).get("children", []):
-            cd = child.get("data", {})
-            body = cd.get("body", "")
-            if any(kw in body.lower() for kw in KEYWORDS):
-                save_message(body, "reddit", cd.get("author", "unknown"), datetime.fromtimestamp(cd.get("created_utc", 0)), "en")
-                count += 1
-        return count
-    except Exception as e:
-        print(f"Erreur Reddit: {e}")
-        return 0
-
-# ---------- Point d'entrée unique ----------
-def collect_all():
-    total = 0
-    total += collect_reddit()
-    total += collect_discord()
-    return total
+# ========== COLLECTEUR GLOBAL ==========
+async def collect_all_sources(since_time: datetime) -> List[Dict]:
+    """Récupère les commentaires depuis Reddit, Koreaboo, et (optionnel) Telegram."""
+    all_comments = []
+    # Reddit
+    reddit_comments = await fetch_reddit_comments("kpop", since_time)
+    all_comments.extend(reddit_comments)
+    # Koreaboo
+    koreaboo_articles = await fetch_koreaboo_articles(limit=5)
+    all_comments.extend(koreaboo_articles)
+    # Telegram (si activé)
+    # telegram_messages = await fetch_telegram_messages(since_time)
+    # all_comments.extend(telegram_messages)
+    return all_comments
