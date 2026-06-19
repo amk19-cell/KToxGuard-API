@@ -2,7 +2,6 @@ fastapi
 uvicorn
 pydantic
 requests
-google-api-python-client
 sqlalchemy
 asyncpg
 aiohttp
