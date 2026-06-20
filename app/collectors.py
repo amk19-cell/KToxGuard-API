@@ -7,9 +7,11 @@ import asyncio
 
 # ---------- CONFIGURATION ----------
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
-YOUTUBE_VIDEO_IDS = os.environ.get("YOUTUBE_VIDEO_IDS", "dQw4w9WgXcQ").split(",")
+YOUTUBE_SEARCH_QUERIES = os.environ.get("YOUTUBE_SEARCH_QUERIES", "kpop,bts,blackpink,ive,nmixx,katseye,newjeans,seventeen,txt")
+YOUTUBE_MAX_VIDEOS_PER_QUERY = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "5"))
+YOUTUBE_MAX_COMMENTS_PER_VIDEO = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "30"))
 
-# Mots-clés pour filtrer les discussions K-pop
+# Mots-clés pour filtrer les discussions K-pop (pour Reddit)
 KEYWORDS = [
     "bts", "bangtan", "seventeen", "txt", "newjeans", "blackpink", "ive", "nmixx", "katseye",
     "kpop", "k-pop", "idol", "fan", "comeback", "concert", "music", "song",
@@ -72,60 +74,78 @@ async def fetch_koreaboo_articles(limit=5):
             print(f"[Koreaboo] Erreur: {e}")
             return []
 
-# ---------- YOUTUBE ----------
-def fetch_youtube_comments_sync(video_id):
-    """Récupère les commentaires YouTube (bloquant, à exécuter dans un thread)."""
+# ---------- YOUTUBE (avec recherche) ----------
+def search_youtube_videos(query, max_results):
+    """Recherche des vidéos YouTube récentes pour une requête donnée."""
     if not YOUTUBE_API_KEY:
         return []
-    
+    try:
+        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        request = youtube.search().list(
+            part="id",
+            q=query,
+            type="video",
+            order="date",
+            maxResults=max_results,
+            relevanceLanguage="en"
+        )
+        response = request.execute()
+        video_ids = [item["id"]["videoId"] for item in response.get("items", [])]
+        return video_ids
+    except Exception as e:
+        print(f"[YouTube Search] Erreur pour '{query}': {e}")
+        return []
+
+def fetch_youtube_comments_sync(video_id):
+    """Récupère les commentaires d'une vidéo YouTube (bloquant)."""
+    if not YOUTUBE_API_KEY:
+        return []
     try:
         youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
         request = youtube.commentThreads().list(
             part="snippet",
             videoId=video_id,
-            maxResults=50,
+            maxResults=YOUTUBE_MAX_COMMENTS_PER_VIDEO,
             textFormat="plainText"
         )
         response = request.execute()
-        
         comments = []
         for item in response.get("items", []):
             snippet = item["snippet"]["topLevelComment"]["snippet"]
             text = snippet.get("textDisplay", "")
             author = snippet.get("authorDisplayName", "unknown")
             published_at = snippet.get("publishedAt", "")
-            # Convertir la date ISO en datetime
             try:
                 timestamp = datetime.fromisoformat(published_at.replace('Z', '+00:00'))
             except:
                 timestamp = datetime.now()
-            
-            # Filtrer par mots-clés
-            if any(kw in text.lower() for kw in KEYWORDS):
-                comments.append({
-                    "text": text,
-                    "platform": "youtube",
-                    "author": author,
-                    "timestamp": timestamp
-                })
+            comments.append({
+                "text": text,
+                "platform": "youtube",
+                "author": author,
+                "timestamp": timestamp
+            })
         return comments
     except Exception as e:
-        print(f"[YouTube] Erreur sur {video_id}: {e}")
+        print(f"[YouTube Comments] Erreur sur {video_id}: {e}")
         return []
 
-async def fetch_youtube_comments(video_ids, since_time):
-    """Récupère les commentaires YouTube depuis since_time."""
-    if not YOUTUBE_API_KEY or not video_ids:
+async def fetch_youtube_comments(since_time):
+    """Recherche des vidéos et récupère les commentaires récents."""
+    if not YOUTUBE_API_KEY:
         return []
     
+    queries = [q.strip() for q in YOUTUBE_SEARCH_QUERIES.split(",") if q.strip()]
     all_comments = []
     loop = asyncio.get_event_loop()
     
-    for video_id in video_ids:
-        comments = await loop.run_in_executor(None, fetch_youtube_comments_sync, video_id)
-        # Filtrer par date
-        filtered = [c for c in comments if c["timestamp"] > since_time]
-        all_comments.extend(filtered)
+    for query in queries:
+        video_ids = await loop.run_in_executor(None, search_youtube_videos, query, YOUTUBE_MAX_VIDEOS_PER_QUERY)
+        for vid in video_ids:
+            comments = await loop.run_in_executor(None, fetch_youtube_comments_sync, vid)
+            # Filtrer par date
+            filtered = [c for c in comments if c["timestamp"] > since_time]
+            all_comments.extend(filtered)
     
     return all_comments
 
@@ -143,7 +163,7 @@ async def collect_all_sources(since_time):
     all_comments.extend(koreaboo_articles)
     
     # YouTube
-    youtube_comments = await fetch_youtube_comments(YOUTUBE_VIDEO_IDS, since_time)
+    youtube_comments = await fetch_youtube_comments(since_time)
     all_comments.extend(youtube_comments)
     
     return all_comments
