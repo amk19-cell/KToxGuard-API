@@ -8,16 +8,13 @@ from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 from datetime import datetime, timedelta
 import os
 import json
+import re
 from pathlib import Path
 
 # ---------- BASE DE DONNÉES ----------
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
-
-# Nettoyer l'URL : enlever ?sslmode=... (problème connu avec asyncpg)
 if "?sslmode=" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.split("?sslmode=")[0]
-
-# Convertir pour asyncpg
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
@@ -44,7 +41,6 @@ async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
 
-# ---------- APPLICATION ----------
 app = FastAPI(title="KToxGuard API")
 app.add_middleware(
     CORSMiddleware,
@@ -54,7 +50,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- MODÈLES PYDANTIC ----------
 class MessageIn(BaseModel):
     text: str
     platform: Optional[str] = None
@@ -62,17 +57,142 @@ class MessageIn(BaseModel):
     ip_address: Optional[str] = None
     lang: Optional[str] = "en"
 
-# ---------- DÉTECTION SIMPLE ----------
-def simple_detect(text: str, lang: str = "en"):
-    toxic_words = ["바보", "병신", "시발", "죽어", "쓰레기", "stupid", "kill", "hate", "fuck", "idiot", "die", "trash", "loser"]
-    score = 0.8 if any(w in text.lower() for w in toxic_words) else 0.0
-    label = "toxique" if score >= 0.7 else "neutre"
+# ---------- CHARGEMENT DU LEXIQUE CORÉEN ----------
+def load_korean_lexicon():
+    path = Path(__file__).parent / "lexicon.json"
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+KOREAN_LEXICON = load_korean_lexicon()
+
+# Catégories qui indiquent une gravité plus haute
+HIGH_SEVERITY_CATEGORIES = {"death_threats", "threat_veiled", "threats_general", "family_paedrip"}
+MEDIUM_SEVERITY_CATEGORIES = {"misogyny", "misandry", "body_shaming", "appearance_bullying",
+                                "dehumanization", "racial_xenophobic", "homophobic", "school_bullying",
+                                "cyber_harassment", "ostracism"}
+
+EXCLUDED_FROM_SCAN = {"full_comment_examples", "sources"}
+
+# ---------- LEXIQUE ANGLAIS ----------
+ENGLISH_LEXICON = {
+    "slang_offensive": {
+        "idiot": "idiot", "stupid": "stupide", "moron": "débile", "loser": "loser",
+        "trash": "déchet", "garbage": "ordure", "pathetic": "pathétique", "worthless": "sans valeur",
+        "fuck you": "fuck you", "asshole": "connard", "bitch": "salope", "whore": "pute",
+        "scum": "vermine", "disgusting": "dégoûtant", "ugly": "moche", "freak": "monstre"
+    },
+    "death_threats": {
+        "kill yourself": "suicide-toi", "kys": "suicide-toi (abr.)", "go die": "va mourir",
+        "i'll kill you": "je vais te tuer", "you should die": "tu devrais mourir",
+        "die": "meurs", "end yourself": "finis-en", "hope you die": "j'espère que tu meurs"
+    },
+    "body_shaming": {
+        "fat": "gros", "fatass": "gros cul", "obese": "obèse", "lose weight": "perds du poids",
+        "too fat to": "trop gros pour", "too big to": "trop gros pour",
+        "shouldn't show": "ne devrait pas montrer", "shouldn't be on": "ne devrait pas être sur"
+    },
+    "cyber_harassment": {
+        "i know where you live": "je sais où tu vis", "i'll find you": "je vais te trouver",
+        "doxx": "doxxing", "leak her info": "diffuser ses infos", "send her address": "envoyer son adresse"
+    },
+    "misogyny_en": {
+        "women shouldn't": "les femmes ne devraient pas", "know your place": "reste à ta place",
+        "go back to the kitchen": "retourne en cuisine"
+    },
+    "racial_xenophobic": {
+        "go back to your country": "retourne dans ton pays", "you people": "vous les gens (péj.)"
+    }
+}
+
+# ---------- PATTERNS CONTEXTUELS (sans mot-clé isolé) ----------
+# Ces regex captent des phrases de jugement / exclusion même sans terme insultant explicite
+CONTEXTUAL_PATTERNS = [
+    # Body shaming structurel : "X (trop/aussi) Y pour faire Z"
+    (r"(too|so|aussi)\s+(fat|big|gros|grosse)\s+(to|for|pour)", "body_shaming_structural", 0.75),
+    (r"(shouldn'?t|ne devrait pas|devrait pas)\s+(show|post|be on|s'exhiber|montrer)", "appearance_judgment", 0.7),
+    (r"(no one|nobody|personne)\s+(wants to see|veut voir)", "appearance_rejection", 0.65),
+    # Exclusion / illégitimité d'exister dans un espace
+    (r"(shouldn'?t exist|n'a pas le droit d'exister|doesn'?t deserve to)", "dehumanization_structural", 0.8),
+    (r"(go back to|retourne)\s+(your country|ton pays|où tu viens)", "xenophobic_structural", 0.75),
+    # Sarcasme agressif combiné à jugement (emoji rieurs + structure négative)
+    (r"(ㅋㅋㅋ|lol|lmao)\s*.{0,20}(trash|pathetic|loser|쓰레기|병신)", "mocking_combo", 0.7),
+]
+
+def detect_contextual_patterns(text: str):
+    text_lower = text.lower()
+    matches = []
+    max_score = 0.0
+    for pattern, ptype, weight in CONTEXTUAL_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            matches.append(ptype)
+            max_score = max(max_score, weight)
+    return matches, max_score
+
+# ---------- DÉTECTION PRINCIPALE ----------
+def detect_toxicity(text: str, lang: str = "en"):
+    if not text:
+        return {"label": "neutre", "confidence": 0.0, "keywords_found": [], "threat_types": [], "recommendations": {}}
+
+    text_lower = text.lower()
+    keywords_found = []
+    threat_types = set()
+    severity_score = 0.0
+
+    # 1. Scan lexique coréen
+    for category, terms in KOREAN_LEXICON.items():
+        if category in EXCLUDED_FROM_SCAN or not isinstance(terms, dict):
+            continue
+        for kr_term in terms.keys():
+            if kr_term in text:
+                keywords_found.append(kr_term)
+                threat_types.add(category)
+                if category in HIGH_SEVERITY_CATEGORIES:
+                    severity_score = max(severity_score, 0.95)
+                elif category in MEDIUM_SEVERITY_CATEGORIES:
+                    severity_score = max(severity_score, 0.8)
+                else:
+                    severity_score = max(severity_score, 0.6)
+
+    # 2. Scan lexique anglais
+    for category, terms in ENGLISH_LEXICON.items():
+        for en_term in terms.keys():
+            if en_term in text_lower:
+                keywords_found.append(en_term)
+                threat_types.add(category)
+                if category == "death_threats":
+                    severity_score = max(severity_score, 0.95)
+                elif category in ("body_shaming", "cyber_harassment", "misogyny_en", "racial_xenophobic"):
+                    severity_score = max(severity_score, 0.8)
+                else:
+                    severity_score = max(severity_score, 0.6)
+
+    # 3. Patterns contextuels (capte les phrases sans mot-clé explicite)
+    pattern_matches, pattern_score = detect_contextual_patterns(text)
+    if pattern_matches:
+        threat_types.update(pattern_matches)
+        severity_score = max(severity_score, pattern_score)
+
+    label = "toxique" if severity_score >= 0.6 else "neutre"
+
+    recommendations = {}
+    if label == "toxique":
+        if "death_threats" in threat_types:
+            recommendations["action"] = "export_evidence_contact_police"
+        elif "body_shaming" in threat_types or "body_shaming_structural" in threat_types or "appearance_bullying" in threat_types:
+            recommendations["action"] = "body_shaming_support"
+        elif "cyber_harassment" in threat_types or "ostracism" in threat_types:
+            recommendations["action"] = "report_and_document"
+        else:
+            recommendations["action"] = "monitor"
+
     return {
         "label": label,
-        "confidence": score,
-        "keywords_found": [],
-        "threat_types": [],
-        "recommendations": {}
+        "confidence": round(severity_score, 2),
+        "keywords_found": keywords_found,
+        "threat_types": list(threat_types),
+        "recommendations": recommendations
     }
 
 # ---------- COLLECTEURS ----------
@@ -89,7 +209,7 @@ async def trigger_collect(db: AsyncSession):
         print(f"[Collect] Erreur: {e}")
         comments = []
     for comment in comments:
-        result = simple_detect(comment["text"], "en")
+        result = detect_toxicity(comment["text"], "en")
         db_msg = Message(
             text=comment["text"],
             platform=comment["platform"],
@@ -123,7 +243,7 @@ def health():
 
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
-    result = simple_detect(msg.text, msg.lang)
+    result = detect_toxicity(msg.text, msg.lang)
     db_msg = Message(
         text=msg.text,
         platform=msg.platform,
@@ -144,7 +264,7 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
 async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(get_db)):
     imported = 0
     for msg in messages:
-        result = simple_detect(msg.text, msg.lang)
+        result = detect_toxicity(msg.text, msg.lang)
         db_msg = Message(
             text=msg.text,
             platform=msg.platform,
@@ -178,17 +298,10 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         total_result = await db.execute(select(func.count(Message.id)))
         total = total_result.scalar() or 0
         if total == 0:
-            return {
-                "total_messages": 0,
-                "toxic_count": 0,
-                "toxic_percentage": 0.0,
-                "by_threat_type": {},
-                "top_keywords": {}
-            }
+            return {"total_messages": 0, "toxic_count": 0, "toxic_percentage": 0.0, "by_threat_type": {}, "top_keywords": {}}
         toxic_result = await db.execute(select(func.count()).where(Message.label == "toxique"))
         toxic_count = toxic_result.scalar() or 0
         toxic_percentage = round((toxic_count / total) * 100, 2)
-        # Calculs simplifiés pour les types de menace et mots-clés
         threat_result = await db.execute(select(Message.threat_types))
         threat_counts = {}
         for row in threat_result:
@@ -211,24 +324,14 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         }
     except Exception as e:
         print(f"[Stats] Erreur: {e}")
-        return {
-            "total_messages": 0,
-            "toxic_count": 0,
-            "toxic_percentage": 0.0,
-            "by_threat_type": {},
-            "top_keywords": {}
-        }
+        return {"total_messages": 0, "toxic_count": 0, "toxic_percentage": 0.0, "by_threat_type": {}, "top_keywords": {}}
 
 @app.get("/messages")
 async def get_messages(limit: int = 50, skip: int = 0, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(Message)
-        .order_by(Message.timestamp.desc())
-        .offset(skip)
-        .limit(limit)
+        select(Message).order_by(Message.timestamp.desc()).offset(skip).limit(limit)
     )
-    messages = result.scalars().all()
-    return messages
+    return result.scalars().all()
 
 @app.get("/artists")
 async def get_artists():
@@ -236,5 +339,4 @@ async def get_artists():
     if not path.exists():
         return []
     with open(path, "r", encoding="utf-8") as f:
-        artists = json.load(f)
-    return artists
+        return json.load(f)
