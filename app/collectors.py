@@ -6,9 +6,9 @@ from googleapiclient.discovery import build
 import asyncio
 
 # ---------- CONFIGURATION ----------
-YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "AIzaSyBrPBb3u__WQicvkokTco77roF_xJ9_czY")
 YOUTUBE_SEARCH_QUERIES = os.environ.get("YOUTUBE_SEARCH_QUERIES", "kpop,bts,blackpink,ive,nmixx,katseye,newjeans,seventeen,txt")
-YOUTUBE_MAX_VIDEOS_PER_QUERY = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "5"))
+YOUTUBE_MAX_VIDEOS_PER_QUERY = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "30"))
 YOUTUBE_MAX_COMMENTS_PER_VIDEO = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "30"))
 
 # Mots-clés pour filtrer les discussions K-pop (pour Reddit)
