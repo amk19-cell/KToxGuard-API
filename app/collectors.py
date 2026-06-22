@@ -16,10 +16,11 @@ except ImportError:
     YOUTUBE_AVAILABLE = False
     build = None
 
-YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "AIzaSyBrPBb3u__WQicvkokTco77roF_xJ9_czY")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 YOUTUBE_MAX_VIDEOS = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "3"))
 YOUTUBE_MAX_COMMENTS = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "20"))
-YOUTUBE_REGION = os.environ.get("YOUTUBE_REGION", "KR", "USA", "Japan", "France", "Mexico")
+# CORRECTION : une seule valeur par défaut
+YOUTUBE_REGION = os.environ.get("YOUTUBE_REGION", "KR")
 
 # ---------- REDDIT ----------
 async def fetch_reddit_comments(subreddit, since_time):
