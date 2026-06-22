@@ -57,7 +57,7 @@ class MessageIn(BaseModel):
     ip_address: Optional[str] = None
     lang: Optional[str] = "en"
 
-# ---------- CHARGEMENT DU LEXIQUE CORÉEN ----------
+# ---------- CHARGEMENT DU LEXIQUE ----------
 def load_korean_lexicon():
     path = Path(__file__).parent / "lexicon.json"
     if path.exists():
@@ -190,44 +190,6 @@ def detect_toxicity(text: str, lang: str = "en"):
 # ---------- COLLECTEURS ----------
 from app.collectors import collect_all_sources
 
-last_collect_time = datetime.now() - timedelta(hours=1)
-
-async def trigger_collect(db: AsyncSession):
-    global last_collect_time
-    now = datetime.now()
-    try:
-        comments = await collect_all_sources(last_collect_time)
-    except Exception as e:
-        print(f"[Collect] Erreur collecte: {e}")
-        comments = []
-
-    saved = 0
-    for comment in comments:
-        try:
-            result = detect_toxicity(comment["text"], "en")
-            db_msg = Message(
-                text=comment["text"],
-                platform=comment["platform"],
-                author=comment["author"],
-                timestamp=comment.get("timestamp", now),
-                label=result["label"],
-                confidence=result["confidence"],
-                keywords_found=json.dumps(result["keywords_found"]),
-                threat_types=json.dumps(result["threat_types"]),
-                recommendations=json.dumps(result["recommendations"]),
-                lang="en"
-            )
-            db.add(db_msg)
-            await db.commit()
-            saved += 1
-        except Exception as e:
-            print(f"[Collect] Erreur sauvegarde message: {e}")
-            await db.rollback()
-            continue
-
-    last_collect_time = now
-    print(f"[Collect] {saved}/{len(comments)} messages sauvegardés avec succès")
-    return saved
 # ---------- ENDPOINTS ----------
 @app.on_event("startup")
 async def startup():
@@ -283,16 +245,6 @@ async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(
     await db.commit()
     return {"imported": imported, "received": len(messages)}
 
-@app.get("/collect")
-async def collect_get(db: AsyncSession = Depends(get_db)):
-    count = await trigger_collect(db)
-    return {"status": "ok", "collected": count}
-
-@app.post("/collect")
-async def collect_post(db: AsyncSession = Depends(get_db)):
-    count = await trigger_collect(db)
-    return {"status": "ok", "collected": count}
-
 # ---------- ENDPOINT DE REMPLISSAGE D'URGENCE ----------
 @app.post("/fill-db")
 async def fill_database(db: AsyncSession = Depends(get_db)):
@@ -318,6 +270,54 @@ async def fill_database(db: AsyncSession = Depends(get_db)):
         count += 1
     await db.commit()
     return {"status": "ok", "imported": count}
+
+@app.get("/collect")
+async def collect_get(db: AsyncSession = Depends(get_db)):
+    from app.collectors import collect_all_sources
+    comments = await collect_all_sources()
+    count = 0
+    for comment in comments:
+        result = detect_toxicity(comment["text"], "en")
+        db_msg = Message(
+            text=comment["text"],
+            platform=comment["platform"],
+            author=comment["author"],
+            timestamp=comment["timestamp"],
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
+            lang="en"
+        )
+        db.add(db_msg)
+        count += 1
+    await db.commit()
+    return {"status": "ok", "collected": count}
+
+@app.post("/collect")
+async def collect_post(db: AsyncSession = Depends(get_db)):
+    from app.collectors import collect_all_sources
+    comments = await collect_all_sources()
+    count = 0
+    for comment in comments:
+        result = detect_toxicity(comment["text"], "en")
+        db_msg = Message(
+            text=comment["text"],
+            platform=comment["platform"],
+            author=comment["author"],
+            timestamp=comment["timestamp"],
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
+            lang="en"
+        )
+        db.add(db_msg)
+        count += 1
+    await db.commit()
+    return {"status": "ok", "collected": count}
 
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
