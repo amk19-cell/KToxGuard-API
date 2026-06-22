@@ -270,6 +270,31 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return result
 
+@app.post("/fill-db")
+async def fill_database(db: AsyncSession = Depends(get_db)):
+    """Remplit la base avec des données de secours en cas d'urgence."""
+    from app.collectors import collect_all_sources
+    comments = await collect_all_sources()
+    count = 0
+    for comment in comments:
+        # Utilisez votre fonction de détection
+        result = detect_toxicity(comment["text"], "en")
+        db_msg = Message(
+            text=comment["text"],
+            platform=comment["platform"],
+            author=comment["author"],
+            timestamp=comment["timestamp"],
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
+            lang="en"
+        )
+        db.add(db_msg)
+        count += 1
+    await db.commit()
+    return {"status": "ok", "imported": count}
 @app.post("/import")
 async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(get_db)):
     imported = 0
