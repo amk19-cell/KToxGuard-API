@@ -16,30 +16,35 @@ except ImportError:
     build = None
 
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+YOUTUBE_SEARCH_QUERY = os.environ.get("YOUTUBE_SEARCH_QUERY", "kpop,korea,music,vlog,news")  # Mots-clés séparés par des virgules
 YOUTUBE_MAX_VIDEOS = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "5"))
 YOUTUBE_MAX_COMMENTS = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "20"))
-YOUTUBE_REGION = os.environ.get("YOUTUBE_REGION", "KR")
 
-# ---------- YOUTUBE (FONCTIONNE) ----------
-def fetch_popular_video_ids(region_code, max_results):
+# ---------- FONCTION DE RECHERCHE DE VIDÉOS ----------
+def search_youtube_videos(query, max_results):
+    """Recherche des vidéos YouTube récentes pour une requête donnée."""
     if not YOUTUBE_AVAILABLE or not YOUTUBE_API_KEY:
         return []
     try:
         youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
-        request = youtube.videos().list(
+        request = youtube.search().list(
             part="id",
-            chart="mostPopular",
-            regionCode=region_code,
-            maxResults=max_results
+            q=query,
+            type="video",
+            order="date",
+            maxResults=max_results,
+            relevanceLanguage="en"  # Peut être changé en "ko" pour le coréen
         )
         response = request.execute()
-        video_ids = [item["id"] for item in response.get("items", [])]
+        video_ids = [item["id"]["videoId"] for item in response.get("items", [])]
+        logger.info(f"[YouTube Search] {len(video_ids)} vidéos trouvées pour '{query}'")
         return video_ids
     except Exception as e:
-        logger.error(f"[YouTube] Erreur: {e}")
+        logger.error(f"[YouTube Search] Erreur: {e}")
         return []
 
-def fetch_youtube_comments_sync(video_id, max_comments):
+def fetch_comments_for_video(video_id, max_comments):
+    """Récupère les commentaires d'une vidéo YouTube."""
     if not YOUTUBE_AVAILABLE or not YOUTUBE_API_KEY:
         return []
     try:
@@ -67,33 +72,20 @@ def fetch_youtube_comments_sync(video_id, max_comments):
                 "author": author,
                 "timestamp": timestamp
             })
+        logger.info(f"[YouTube] {len(comments)} commentaires pour {video_id}")
         return comments
     except Exception as e:
-        logger.error(f"[YouTube] Erreur: {e}")
+        logger.error(f"[YouTube] Erreur sur {video_id}: {e}")
         return []
 
-async def fetch_youtube_comments():
-    if not YOUTUBE_AVAILABLE or not YOUTUBE_API_KEY:
-        return []
-    video_ids = fetch_popular_video_ids(YOUTUBE_REGION, YOUTUBE_MAX_VIDEOS)
-    if not video_ids:
-        return []
-    all_comments = []
-    loop = asyncio.get_event_loop()
-    for vid in video_ids:
-        comments = await loop.run_in_executor(None, fetch_youtube_comments_sync, vid, YOUTUBE_MAX_COMMENTS)
-        all_comments.extend(comments)
-        logger.info(f"[YouTube] Vidéo {vid}: {len(comments)} commentaires")
-    return all_comments
-
-# ---------- REDDIT (bloqué, on le désactive) ----------
+# ---------- REDDIT (désactivé) ----------
 async def fetch_reddit_comments(subreddit, since_time):
-    logger.warning("[Reddit] Désactivé (bloqué par Reddit)")
+    logger.warning("[Reddit] Désactivé (bloqué)")
     return []
 
-# ---------- KOREABOO (problème de scraping, désactivé) ----------
+# ---------- KOREABOO (désactivé) ----------
 async def fetch_koreaboo_articles(limit=3):
-    logger.warning("[Koreaboo] Désactivé (problème de scraping)")
+    logger.warning("[Koreaboo] Désactivé")
     return []
 
 # ---------- COLLECTEUR GLOBAL ----------
@@ -103,9 +95,15 @@ async def collect_all_sources(since_time=None):
     
     all_comments = []
     
-    # YouTube (seul)
-    youtube_comments = await fetch_youtube_comments()
-    all_comments.extend(youtube_comments)
+    # YouTube Search
+    if YOUTUBE_API_KEY:
+        queries = [q.strip() for q in YOUTUBE_SEARCH_QUERY.split(",") if q.strip()]
+        loop = asyncio.get_event_loop()
+        for query in queries:
+            video_ids = await loop.run_in_executor(None, search_youtube_videos, query, YOUTUBE_MAX_VIDEOS)
+            for vid in video_ids:
+                comments = await loop.run_in_executor(None, fetch_comments_for_video, vid, YOUTUBE_MAX_COMMENTS)
+                all_comments.extend(comments)
     
-    logger.info(f"Collecte totale: {len(all_comments)} commentaires YouTube")
+    logger.info(f"Collecte totale: {len(all_comments)} commentaires")
     return all_comments
