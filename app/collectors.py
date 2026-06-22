@@ -4,6 +4,7 @@ import os
 import re
 import asyncio
 import logging
+import json as jsonlib
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,30 +20,33 @@ except ImportError:
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 YOUTUBE_MAX_VIDEOS = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "3"))
 YOUTUBE_MAX_COMMENTS = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "20"))
-# CORRECTION : une seule valeur par défaut
 YOUTUBE_REGION = os.environ.get("YOUTUBE_REGION", "KR")
 
-# ---------- REDDIT ----------
+# ---------- PROXY REDDIT (contourne le blocage) ----------
 async def fetch_reddit_comments(subreddit, since_time):
-    url = f"https://www.reddit.com/r/{subreddit}/comments.json?limit=30"
+    """Récupère les commentaires Reddit via un proxy."""
+    url = f"https://api.allorigins.win/get?url={aiohttp.helpers.quote(f'https://www.reddit.com/r/{subreddit}/comments.json?limit=30', safe='')}"
     headers = {"User-Agent": "KToxGuard/1.0"}
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get(url, headers=headers, timeout=10) as response:
+            async with session.get(url, headers=headers, timeout=15) as response:
                 if response.status != 200:
+                    logger.warning(f"[Reddit] Erreur HTTP {response.status}")
                     return []
                 data = await response.json()
+                reddit_data = jsonlib.loads(data.get('contents', '{}'))
                 comments = []
-                for child in data.get("data", {}).get("children", []):
-                    comment_data = child.get("data", {})
-                    created_utc = datetime.fromtimestamp(comment_data.get("created_utc", 0))
-                    # On prend tous les commentaires, pas de filtre de date pour le moment
-                    comments.append({
-                        "text": comment_data.get("body", ""),
-                        "platform": "reddit",
-                        "author": comment_data.get("author", "unknown"),
-                        "timestamp": created_utc
-                    })
+                for child in reddit_data.get('data', {}).get('children', []):
+                    comment_data = child.get('data', {})
+                    created_utc = datetime.fromtimestamp(comment_data.get('created_utc', 0))
+                    if created_utc > since_time:
+                        comments.append({
+                            "text": comment_data.get('body', ''),
+                            "platform": "reddit",
+                            "author": comment_data.get('author', 'unknown'),
+                            "timestamp": created_utc
+                        })
+                logger.info(f"[Reddit] {len(comments)} commentaires récupérés")
                 return comments
         except Exception as e:
             logger.error(f"[Reddit] Erreur: {e}")
@@ -122,7 +126,7 @@ def fetch_youtube_comments_sync(video_id, max_comments):
             })
         return comments
     except Exception as e:
-        logger.error(f"[YouTube] Erreur sur vidéo: {e}")
+        logger.error(f"[YouTube] Erreur: {e}")
         return []
 
 async def fetch_youtube_comments():
@@ -138,15 +142,34 @@ async def fetch_youtube_comments():
         all_comments.extend(comments)
     return all_comments
 
-# ---------- COLLECTEUR GLOBAL (sans filtre de date) ----------
-async def collect_all_sources():
-    """Récupère tous les commentaires disponibles (sans filtre de date)."""
+# ---------- COLLECTEUR GLOBAL ----------
+async def collect_all_sources(since_time=None):
+    """Récupère tous les commentaires disponibles."""
+    if since_time is None:
+        since_time = datetime.now() - timedelta(days=7)
+    
     all_comments = []
-    reddit_comments = await fetch_reddit_comments("kpop", datetime.now() - timedelta(days=7))
-    all_comments.extend(reddit_comments)
-    koreaboo_articles = await fetch_koreaboo_articles(limit=3)
-    all_comments.extend(koreaboo_articles)
-    youtube_comments = await fetch_youtube_comments()
-    all_comments.extend(youtube_comments)
+    
+    # Reddit
+    try:
+        reddit_comments = await fetch_reddit_comments("kpop", since_time)
+        all_comments.extend(reddit_comments)
+    except Exception as e:
+        logger.error(f"[Collect] Reddit: {e}")
+    
+    # Koreaboo
+    try:
+        koreaboo_articles = await fetch_koreaboo_articles(limit=3)
+        all_comments.extend(koreaboo_articles)
+    except Exception as e:
+        logger.error(f"[Collect] Koreaboo: {e}")
+    
+    # YouTube
+    try:
+        youtube_comments = await fetch_youtube_comments()
+        all_comments.extend(youtube_comments)
+    except Exception as e:
+        logger.error(f"[Collect] YouTube: {e}")
+    
     logger.info(f"Collecte totale: {len(all_comments)} commentaires")
     return all_comments
