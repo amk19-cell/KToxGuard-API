@@ -67,7 +67,6 @@ def load_korean_lexicon():
 
 KOREAN_LEXICON = load_korean_lexicon()
 
-# Catégories qui indiquent une gravité plus haute
 HIGH_SEVERITY_CATEGORIES = {"death_threats", "threat_veiled", "threats_general", "family_paedrip"}
 MEDIUM_SEVERITY_CATEGORIES = {"misogyny", "misandry", "body_shaming", "appearance_bullying",
                                 "dehumanization", "racial_xenophobic", "homophobic", "school_bullying",
@@ -106,17 +105,13 @@ ENGLISH_LEXICON = {
     }
 }
 
-# ---------- PATTERNS CONTEXTUELS (sans mot-clé isolé) ----------
-# Ces regex captent des phrases de jugement / exclusion même sans terme insultant explicite
+# ---------- PATTERNS CONTEXTUELS ----------
 CONTEXTUAL_PATTERNS = [
-    # Body shaming structurel : "X (trop/aussi) Y pour faire Z"
     (r"(too|so|aussi)\s+(fat|big|gros|grosse)\s+(to|for|pour)", "body_shaming_structural", 0.75),
     (r"(shouldn'?t|ne devrait pas|devrait pas)\s+(show|post|be on|s'exhiber|montrer)", "appearance_judgment", 0.7),
     (r"(no one|nobody|personne)\s+(wants to see|veut voir)", "appearance_rejection", 0.65),
-    # Exclusion / illégitimité d'exister dans un espace
     (r"(shouldn'?t exist|n'a pas le droit d'exister|doesn'?t deserve to)", "dehumanization_structural", 0.8),
     (r"(go back to|retourne)\s+(your country|ton pays|où tu viens)", "xenophobic_structural", 0.75),
-    # Sarcasme agressif combiné à jugement (emoji rieurs + structure négative)
     (r"(ㅋㅋㅋ|lol|lmao)\s*.{0,20}(trash|pathetic|loser|쓰레기|병신)", "mocking_combo", 0.7),
 ]
 
@@ -140,7 +135,6 @@ def detect_toxicity(text: str, lang: str = "en"):
     threat_types = set()
     severity_score = 0.0
 
-    # 1. Scan lexique coréen
     for category, terms in KOREAN_LEXICON.items():
         if category in EXCLUDED_FROM_SCAN or not isinstance(terms, dict):
             continue
@@ -155,7 +149,6 @@ def detect_toxicity(text: str, lang: str = "en"):
                 else:
                     severity_score = max(severity_score, 0.6)
 
-    # 2. Scan lexique anglais
     for category, terms in ENGLISH_LEXICON.items():
         for en_term in terms.keys():
             if en_term in text_lower:
@@ -168,7 +161,6 @@ def detect_toxicity(text: str, lang: str = "en"):
                 else:
                     severity_score = max(severity_score, 0.6)
 
-    # 3. Patterns contextuels (capte les phrases sans mot-clé explicite)
     pattern_matches, pattern_score = detect_contextual_patterns(text)
     if pattern_matches:
         threat_types.update(pattern_matches)
@@ -204,38 +196,28 @@ async def trigger_collect(db: AsyncSession):
     global last_collect_time
     now = datetime.now()
     try:
-        comments = await collect_all_sources(last_collect_time)
+        comments = await collect_all_sources()
     except Exception as e:
-        print(f"[Collect] Erreur collecte: {e}")
+        print(f"[Collect] Erreur: {e}")
         comments = []
-
-    saved = 0
     for comment in comments:
-        try:
-            result = detect_toxicity(comment["text"], "en")
-            db_msg = Message(
-                text=comment["text"],
-                platform=comment["platform"],
-                author=comment["author"],
-                timestamp=comment.get("timestamp", now),
-                label=result["label"],
-                confidence=result["confidence"],
-                keywords_found=json.dumps(result["keywords_found"]),
-                threat_types=json.dumps(result["threat_types"]),
-                recommendations=json.dumps(result["recommendations"]),
-                lang="en"
-            )
-            db.add(db_msg)
-            await db.commit()
-            saved += 1
-        except Exception as e:
-            print(f"[Collect] Erreur sauvegarde message: {e}")
-            await db.rollback()
-            continue
-
+        result = detect_toxicity(comment["text"], "en")
+        db_msg = Message(
+            text=comment["text"],
+            platform=comment["platform"],
+            author=comment["author"],
+            timestamp=comment.get("timestamp", now),
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
+            lang="en"
+        )
+        db.add(db_msg)
+    await db.commit()
     last_collect_time = now
-    print(f"[Collect] {saved}/{len(comments)} messages sauvegardés avec succès")
-    return saved
+    return len(comments)
 
 # ---------- ENDPOINTS ----------
 @app.on_event("startup")
@@ -270,31 +252,6 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return result
 
-@app.post("/fill-db")
-async def fill_database(db: AsyncSession = Depends(get_db)):
-    """Remplit la base avec des données de secours en cas d'urgence."""
-    from app.collectors import collect_all_sources
-    comments = await collect_all_sources()
-    count = 0
-    for comment in comments:
-        # Utilisez votre fonction de détection
-        result = detect_toxicity(comment["text"], "en")
-        db_msg = Message(
-            text=comment["text"],
-            platform=comment["platform"],
-            author=comment["author"],
-            timestamp=comment["timestamp"],
-            label=result["label"],
-            confidence=result["confidence"],
-            keywords_found=json.dumps(result["keywords_found"]),
-            threat_types=json.dumps(result["threat_types"]),
-            recommendations=json.dumps(result["recommendations"]),
-            lang="en"
-        )
-        db.add(db_msg)
-        count += 1
-    await db.commit()
-    return {"status": "ok", "imported": count}
 @app.post("/import")
 async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(get_db)):
     imported = 0
@@ -326,6 +283,32 @@ async def collect_get(db: AsyncSession = Depends(get_db)):
 async def collect_post(db: AsyncSession = Depends(get_db)):
     count = await trigger_collect(db)
     return {"status": "ok", "collected": count}
+
+# ---------- ENDPOINT DE REMPLISSAGE D'URGENCE ----------
+@app.post("/fill-db")
+async def fill_database(db: AsyncSession = Depends(get_db)):
+    """Remplit la base avec des données de secours en cas d'urgence."""
+    from app.collectors import collect_all_sources
+    comments = await collect_all_sources()
+    count = 0
+    for comment in comments:
+        result = detect_toxicity(comment["text"], "en")
+        db_msg = Message(
+            text=comment["text"],
+            platform=comment["platform"],
+            author=comment["author"],
+            timestamp=comment["timestamp"],
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
+            lang="en"
+        )
+        db.add(db_msg)
+        count += 1
+    await db.commit()
+    return {"status": "ok", "imported": count}
 
 @app.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
