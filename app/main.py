@@ -248,8 +248,7 @@ async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(
 # ---------- ENDPOINT DE REMPLISSAGE D'URGENCE ----------
 @app.post("/fill-db")
 async def fill_database(db: AsyncSession = Depends(get_db)):
-    """Remplit la base avec des données de secours en cas d'urgence."""
-    from app.collectors import collect_all_sources
+    """Remplit la base avec des données de secours."""
     comments = await collect_all_sources()
     count = 0
     for comment in comments:
@@ -273,7 +272,6 @@ async def fill_database(db: AsyncSession = Depends(get_db)):
 
 @app.get("/collect")
 async def collect_get(db: AsyncSession = Depends(get_db)):
-    from app.collectors import collect_all_sources
     comments = await collect_all_sources()
     count = 0
     for comment in comments:
@@ -297,7 +295,6 @@ async def collect_get(db: AsyncSession = Depends(get_db)):
 
 @app.post("/collect")
 async def collect_post(db: AsyncSession = Depends(get_db)):
-    from app.collectors import collect_all_sources
     comments = await collect_all_sources()
     count = 0
     for comment in comments:
