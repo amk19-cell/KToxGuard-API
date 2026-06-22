@@ -6,3 +6,4 @@ sqlalchemy
 asyncpg
 aiohttp
 google-api-python-client
+praw
