@@ -16,8 +16,8 @@ except ImportError:
     build = None
 
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
-YOUTUBE_SEARCH_QUERY = os.environ.get("YOUTUBE_SEARCH_QUERY", "kpop,korea,music,vlog,news")  # Mots-clés séparés par des virgules
-YOUTUBE_MAX_VIDEOS = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "5"))
+YOUTUBE_SEARCH_QUERY = os.environ.get("YOUTUBE_SEARCH_QUERY", "kpop,korea,music,vlog,news")
+YOUTUBE_MAX_VIDEOS = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "3"))
 YOUTUBE_MAX_COMMENTS = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "20"))
 
 # ---------- FONCTION DE RECHERCHE DE VIDÉOS ----------
@@ -33,11 +33,11 @@ def search_youtube_videos(query, max_results):
             type="video",
             order="date",
             maxResults=max_results,
-            relevanceLanguage="en"  # Peut être changé en "ko" pour le coréen
+            relevanceLanguage="ko"
         )
         response = request.execute()
         video_ids = [item["id"]["videoId"] for item in response.get("items", [])]
-        logger.info(f"[YouTube Search] {len(video_ids)} vidéos trouvées pour '{query}'")
+        logger.info(f"[YouTube Search] {len(video_ids)} vidéos pour '{query}'")
         return video_ids
     except Exception as e:
         logger.error(f"[YouTube Search] Erreur: {e}")
@@ -89,10 +89,7 @@ async def fetch_koreaboo_articles(limit=3):
     return []
 
 # ---------- COLLECTEUR GLOBAL ----------
-async def collect_all_sources(since_time=None):
-    if since_time is None:
-        since_time = datetime.now() - timedelta(days=7)
-    
+async function collect_all_sources():
     all_comments = []
     
     # YouTube Search
