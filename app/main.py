@@ -206,26 +206,36 @@ async def trigger_collect(db: AsyncSession):
     try:
         comments = await collect_all_sources(last_collect_time)
     except Exception as e:
-        print(f"[Collect] Erreur: {e}")
+        print(f"[Collect] Erreur collecte: {e}")
         comments = []
+
+    saved = 0
     for comment in comments:
-        result = detect_toxicity(comment["text"], "en")
-        db_msg = Message(
-            text=comment["text"],
-            platform=comment["platform"],
-            author=comment["author"],
-            timestamp=comment.get("timestamp", now),
-            label=result["label"],
-            confidence=result["confidence"],
-            keywords_found=json.dumps(result["keywords_found"]),
-            threat_types=json.dumps(result["threat_types"]),
-            recommendations=json.dumps(result["recommendations"]),
-            lang="en"
-        )
-        db.add(db_msg)
-    await db.commit()
+        try:
+            result = detect_toxicity(comment["text"], "en")
+            db_msg = Message(
+                text=comment["text"],
+                platform=comment["platform"],
+                author=comment["author"],
+                timestamp=comment.get("timestamp", now),
+                label=result["label"],
+                confidence=result["confidence"],
+                keywords_found=json.dumps(result["keywords_found"]),
+                threat_types=json.dumps(result["threat_types"]),
+                recommendations=json.dumps(result["recommendations"]),
+                lang="en"
+            )
+            db.add(db_msg)
+            await db.commit()
+            saved += 1
+        except Exception as e:
+            print(f"[Collect] Erreur sauvegarde message: {e}")
+            await db.rollback()
+            continue
+
     last_collect_time = now
-    return len(comments)
+    print(f"[Collect] {saved}/{len(comments)} messages sauvegardés avec succès")
+    return saved
 
 # ---------- ENDPOINTS ----------
 @app.on_event("startup")
