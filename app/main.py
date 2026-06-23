@@ -32,9 +32,9 @@ class Message(Base):
     timestamp: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     label: Mapped[str]
     confidence: Mapped[float]
-    keywords_found: Mapped[Optional[dict]]  # type JSON
-    threat_types: Mapped[Optional[list]]    # type JSON
-    recommendations: Mapped[Optional[dict]] # type JSON
+    keywords_found: Mapped[Optional[str]]  # Stocké comme JSON string
+    threat_types: Mapped[Optional[str]]    # Stocké comme JSON string
+    recommendations: Mapped[Optional[str]] # Stocké comme JSON string
     lang: Mapped[str] = mapped_column(default="en")
 
 async def get_db():
@@ -214,9 +214,9 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
         ip_address=msg.ip_address,
         label=result["label"],
         confidence=result["confidence"],
-        keywords_found=result["keywords_found"],  # CORRIGÉ : plus de json.dumps
-        threat_types=result["threat_types"],      # CORRIGÉ
-        recommendations=result["recommendations"],# CORRIGÉ
+        keywords_found=json.dumps(result["keywords_found"]),  # Converti en JSON string
+        threat_types=json.dumps(result["threat_types"]),
+        recommendations=json.dumps(result["recommendations"]),
         lang=msg.lang
     )
     db.add(db_msg)
@@ -235,9 +235,9 @@ async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(
             ip_address=msg.ip_address,
             label=result["label"],
             confidence=result["confidence"],
-            keywords_found=result["keywords_found"],
-            threat_types=result["threat_types"],
-            recommendations=result["recommendations"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
             lang=msg.lang
         )
         db.add(db_msg)
@@ -258,9 +258,9 @@ async def collect_get(db: AsyncSession = Depends(get_db)):
             timestamp=comment["timestamp"],
             label=result["label"],
             confidence=result["confidence"],
-            keywords_found=result["keywords_found"],
-            threat_types=result["threat_types"],
-            recommendations=result["recommendations"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
             lang="en"
         )
         db.add(db_msg)
@@ -281,9 +281,9 @@ async def collect_post(db: AsyncSession = Depends(get_db)):
             timestamp=comment["timestamp"],
             label=result["label"],
             confidence=result["confidence"],
-            keywords_found=result["keywords_found"],
-            threat_types=result["threat_types"],
-            recommendations=result["recommendations"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
             lang="en"
         )
         db.add(db_msg)
@@ -305,13 +305,13 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         threat_counts = {}
         for row in threat_result:
             if row[0]:
-                for t in row[0]:
+                for t in json.loads(row[0]):
                     threat_counts[t] = threat_counts.get(t, 0) + 1
         kw_result = await db.execute(select(Message.keywords_found))
         kw_counts = {}
         for row in kw_result:
             if row[0]:
-                for kw in row[0]:
+                for kw in json.loads(row[0]):
                     kw_counts[kw] = kw_counts.get(kw, 0) + 1
         top_keywords = dict(sorted(kw_counts.items(), key=lambda x: x[1], reverse=True)[:5])
         return {
