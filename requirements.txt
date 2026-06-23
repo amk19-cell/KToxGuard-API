@@ -6,4 +6,3 @@ sqlalchemy
 asyncpg
 aiohttp
 google-api-python-client
-snscrape
