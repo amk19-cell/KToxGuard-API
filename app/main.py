@@ -18,7 +18,7 @@ if "?sslmode=" in DATABASE_URL:
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 Base = declarative_base()
 
@@ -32,9 +32,9 @@ class Message(Base):
     timestamp: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     label: Mapped[str]
     confidence: Mapped[float]
-    keywords_found: Mapped[Optional[str]]  # Stocké comme JSON string
-    threat_types: Mapped[Optional[str]]    # Stocké comme JSON string
-    recommendations: Mapped[Optional[str]] # Stocké comme JSON string
+    keywords_found: Mapped[Optional[str]]
+    threat_types: Mapped[Optional[str]]
+    recommendations: Mapped[Optional[str]]
     lang: Mapped[str] = mapped_column(default="en")
 
 async def get_db():
@@ -57,7 +57,7 @@ class MessageIn(BaseModel):
     ip_address: Optional[str] = None
     lang: Optional[str] = "en"
 
-# ---------- CHARGEMENT DU LEXIQUE ----------
+# ---------- LEXIQUE CORÉEN ----------
 def load_korean_lexicon():
     path = Path(__file__).parent / "lexicon.json"
     if path.exists():
@@ -66,12 +66,10 @@ def load_korean_lexicon():
     return {}
 
 KOREAN_LEXICON = load_korean_lexicon()
-
 HIGH_SEVERITY_CATEGORIES = {"death_threats", "threat_veiled", "threats_general", "family_paedrip"}
 MEDIUM_SEVERITY_CATEGORIES = {"misogyny", "misandry", "body_shaming", "appearance_bullying",
                                 "dehumanization", "racial_xenophobic", "homophobic", "school_bullying",
                                 "cyber_harassment", "ostracism"}
-
 EXCLUDED_FROM_SCAN = {"full_comment_examples", "sources"}
 
 # ---------- LEXIQUE ANGLAIS ----------
@@ -85,10 +83,10 @@ ENGLISH_LEXICON = {
     "death_threats": {
         "kill yourself": "suicide-toi", "kys": "suicide-toi (abr.)", "go die": "va mourir",
         "i'll kill you": "je vais te tuer", "you should die": "tu devrais mourir",
-        "die": "meurs", "end yourself": "finis-en", "hope you die": "j'espère que tu meurs"
+        "end yourself": "finis-en", "hope you die": "j'espère que tu meurs"
     },
     "body_shaming": {
-        "fat": "gros", "fatass": "gros cul", "obese": "obèse", "lose weight": "perds du poids",
+        "fatass": "gros cul", "obese": "obèse", "lose weight": "perds du poids",
         "too fat to": "trop gros pour", "too big to": "trop gros pour",
         "shouldn't show": "ne devrait pas montrer", "shouldn't be on": "ne devrait pas être sur"
     },
@@ -97,22 +95,19 @@ ENGLISH_LEXICON = {
         "doxx": "doxxing", "leak her info": "diffuser ses infos", "send her address": "envoyer son adresse"
     },
     "misogyny_en": {
-        "women shouldn't": "les femmes ne devraient pas", "know your place": "reste à ta place",
-        "go back to the kitchen": "retourne en cuisine"
+        "women shouldn't": "les femmes ne devraient pas", "know your place": "reste à ta place"
     },
     "racial_xenophobic": {
-        "go back to your country": "retourne dans ton pays", "you people": "vous les gens (péj.)"
+        "go back to your country": "retourne dans ton pays"
     }
 }
 
-# ---------- PATTERNS CONTEXTUELS ----------
 CONTEXTUAL_PATTERNS = [
-    (r"(too|so|aussi)\s+(fat|big|gros|grosse)\s+(to|for|pour)", "body_shaming_structural", 0.75),
-    (r"(shouldn'?t|ne devrait pas|devrait pas)\s+(show|post|be on|s'exhiber|montrer)", "appearance_judgment", 0.7),
-    (r"(no one|nobody|personne)\s+(wants to see|veut voir)", "appearance_rejection", 0.65),
-    (r"(shouldn'?t exist|n'a pas le droit d'exister|doesn'?t deserve to)", "dehumanization_structural", 0.8),
-    (r"(go back to|retourne)\s+(your country|ton pays|où tu viens)", "xenophobic_structural", 0.75),
-    (r"(ㅋㅋㅋ|lol|lmao)\s*.{0,20}(trash|pathetic|loser|쓰레기|병신)", "mocking_combo", 0.7),
+    (r"(too|so)\s+(fat|big)\s+(to|for)", "body_shaming_structural", 0.75),
+    (r"(shouldn'?t)\s+(show|post|be on)", "appearance_judgment", 0.7),
+    (r"(no one|nobody)\s+(wants to see)", "appearance_rejection", 0.65),
+    (r"(shouldn'?t exist|doesn'?t deserve to)", "dehumanization_structural", 0.8),
+    (r"(go back to)\s+(your country)", "xenophobic_structural", 0.75),
 ]
 
 def detect_contextual_patterns(text: str):
@@ -125,7 +120,6 @@ def detect_contextual_patterns(text: str):
             max_score = max(max_score, weight)
     return matches, max_score
 
-# ---------- DÉTECTION PRINCIPALE ----------
 def detect_toxicity(text: str, lang: str = "en"):
     if not text:
         return {"label": "neutre", "confidence": 0.0, "keywords_found": [], "threat_types": [], "recommendations": {}}
@@ -172,7 +166,7 @@ def detect_toxicity(text: str, lang: str = "en"):
     if label == "toxique":
         if "death_threats" in threat_types:
             recommendations["action"] = "export_evidence_contact_police"
-        elif "body_shaming" in threat_types or "body_shaming_structural" in threat_types or "appearance_bullying" in threat_types:
+        elif "body_shaming" in threat_types or "body_shaming_structural" in threat_types:
             recommendations["action"] = "body_shaming_support"
         elif "cyber_harassment" in threat_types or "ostracism" in threat_types:
             recommendations["action"] = "report_and_document"
@@ -187,8 +181,55 @@ def detect_toxicity(text: str, lang: str = "en"):
         "recommendations": recommendations
     }
 
-# ---------- COLLECTEURS ----------
+# ---------- COLLECTEUR ----------
 from app.collectors import collect_all_sources
+
+last_collect_time = datetime.now() - timedelta(hours=1)
+
+async def save_message(db: AsyncSession, comment: dict, now: datetime):
+    """Sauvegarde un seul message avec son propre commit, isolé des autres."""
+    try:
+        result = detect_toxicity(comment["text"], "en")
+        db_msg = Message(
+            text=comment["text"][:2000],
+            platform=comment.get("platform", "unknown"),
+            author=comment.get("author", "unknown"),
+            timestamp=comment.get("timestamp", now),
+            label=result["label"],
+            confidence=result["confidence"],
+            keywords_found=json.dumps(result["keywords_found"]),
+            threat_types=json.dumps(result["threat_types"]),
+            recommendations=json.dumps(result["recommendations"]),
+            lang="en"
+        )
+        db.add(db_msg)
+        await db.commit()
+        return True
+    except Exception as e:
+        print(f"[Collect] Erreur sauvegarde: {e}")
+        await db.rollback()
+        return False
+
+async def trigger_collect(db: AsyncSession):
+    global last_collect_time
+    now = datetime.now()
+    try:
+        comments = await collect_all_sources(last_collect_time)
+    except Exception as e:
+        print(f"[Collect] Erreur collecte sources: {e}")
+        comments = []
+
+    saved = 0
+    for comment in comments:
+        if not comment.get("text"):
+            continue
+        success = await save_message(db, comment, now)
+        if success:
+            saved += 1
+
+    last_collect_time = now
+    print(f"[Collect] {saved}/{len(comments)} messages sauvegardés")
+    return saved
 
 # ---------- ENDPOINTS ----------
 @app.on_event("startup")
@@ -214,7 +255,7 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
         ip_address=msg.ip_address,
         label=result["label"],
         confidence=result["confidence"],
-        keywords_found=json.dumps(result["keywords_found"]),  # Converti en JSON string
+        keywords_found=json.dumps(result["keywords_found"]),
         threat_types=json.dumps(result["threat_types"]),
         recommendations=json.dumps(result["recommendations"]),
         lang=msg.lang
@@ -247,48 +288,12 @@ async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(
 
 @app.get("/collect")
 async def collect_get(db: AsyncSession = Depends(get_db)):
-    comments = await collect_all_sources()
-    count = 0
-    for comment in comments:
-        result = detect_toxicity(comment["text"], "en")
-        db_msg = Message(
-            text=comment["text"],
-            platform=comment["platform"],
-            author=comment["author"],
-            timestamp=comment["timestamp"],
-            label=result["label"],
-            confidence=result["confidence"],
-            keywords_found=json.dumps(result["keywords_found"]),
-            threat_types=json.dumps(result["threat_types"]),
-            recommendations=json.dumps(result["recommendations"]),
-            lang="en"
-        )
-        db.add(db_msg)
-        count += 1
-    await db.commit()
+    count = await trigger_collect(db)
     return {"status": "ok", "collected": count}
 
 @app.post("/collect")
 async def collect_post(db: AsyncSession = Depends(get_db)):
-    comments = await collect_all_sources()
-    count = 0
-    for comment in comments:
-        result = detect_toxicity(comment["text"], "en")
-        db_msg = Message(
-            text=comment["text"],
-            platform=comment["platform"],
-            author=comment["author"],
-            timestamp=comment["timestamp"],
-            label=result["label"],
-            confidence=result["confidence"],
-            keywords_found=json.dumps(result["keywords_found"]),
-            threat_types=json.dumps(result["threat_types"]),
-            recommendations=json.dumps(result["recommendations"]),
-            lang="en"
-        )
-        db.add(db_msg)
-        count += 1
-    await db.commit()
+    count = await trigger_collect(db)
     return {"status": "ok", "collected": count}
 
 @app.get("/stats")
