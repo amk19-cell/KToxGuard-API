@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-from sqlalchemy import func, select
+from sqlalchemy import func, select, JSON  # <--- Ajout de JSON ici
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 from datetime import datetime, timedelta
@@ -32,9 +32,10 @@ class Message(Base):
     timestamp: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     label: Mapped[str]
     confidence: Mapped[float]
-    keywords_found: Mapped[Optional[str]]
-    threat_types: Mapped[Optional[str]]
-    recommendations: Mapped[Optional[str]]
+    # CORRECTION DES TYPES ICI POUR ALIGNER AVEC POSTGRESQL
+    keywords_found: Mapped[Optional[list]] = mapped_column(JSON, default=[])
+    threat_types: Mapped[Optional[list]] = mapped_column(JSON, default=[])
+    recommendations: Mapped[Optional[dict]] = mapped_column(JSON, default={})
     lang: Mapped[str] = mapped_column(default="en")
 
 async def get_db():
@@ -68,8 +69,8 @@ def load_korean_lexicon():
 KOREAN_LEXICON = load_korean_lexicon()
 HIGH_SEVERITY_CATEGORIES = {"death_threats", "threat_veiled", "threats_general", "family_paedrip"}
 MEDIUM_SEVERITY_CATEGORIES = {"misogyny", "misandry", "body_shaming", "appearance_bullying",
-                                "dehumanization", "racial_xenophobic", "homophobic", "school_bullying",
-                                "cyber_harassment", "ostracism"}
+                              "dehumanization", "racial_xenophobic", "homophobic", "school_bullying",
+                              "cyber_harassment", "ostracism"}
 EXCLUDED_FROM_SCAN = {"full_comment_examples", "sources"}
 
 # ---------- LEXIQUE ANGLAIS ----------
