@@ -5,6 +5,7 @@ from googleapiclient.errors import HttpError
 import asyncio
 import feedparser
 import re
+import snscrape.modules.twitter as sntwitter   # <-- nouveau
 
 # ---------- CONFIGURATION ----------
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "AIzaSyBrPBb3u__WQicvkokTco77roF_xJ9_czY")
@@ -19,14 +20,29 @@ YOUTUBE_MAX_COMMENTS_PER_VIDEO = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "20"
 
 # ---------- FLUX RSS (médias coréens) ----------
 RSS_FEEDS = [
-    "https://www.yna.co.kr/rss/news.xml",          # Yonhap – général
-    "https://www.yna.co.kr/rss/politics.xml",      # Yonhap – politique
-    "https://www.yna.co.kr/rss/economy.xml",       # Yonhap – économie
-    "https://www.yna.co.kr/rss/society.xml",       # Yonhap – société
-    "https://www.yna.co.kr/rss/culture.xml",       # Yonhap – culture
-    # Vous pouvez ajouter d'autres flux ici :
-    # "http://www.koreatimes.co.kr/rss/",          # Korea Times (English)
-    # "https://news.naver.com/main/ranking/rss/",  # Naver News (si disponible)
+    "https://www.yna.co.kr/rss/news.xml",
+    "https://www.yna.co.kr/rss/politics.xml",
+    "https://www.yna.co.kr/rss/economy.xml",
+    "https://www.yna.co.kr/rss/society.xml",
+    "https://www.yna.co.kr/rss/culture.xml",
+]
+
+# ---------- CONFIGURATION TWITTER ----------
+TWITTER_MAX_TWEETS_PER_QUERY = 15   # nombre de tweets par mot‑clé
+TWITTER_QUERIES = [
+    "학교 폭력",
+    "왕따",
+    "한국 교육",
+    "사이버폭력",
+    "한국 사회",
+    "청소년 문제",
+    "한국 뉴스",
+    "korea school bullying",
+    "korea cyberbullying",
+    "korean society",
+    "korean education",
+    "Korean youth",
+    "Korean students"
 ]
 
 # ---------- FONCTIONS YOUTUBE ----------
@@ -79,7 +95,7 @@ def fetch_youtube_comments_sync(video_id):
         print(f"[YouTube Comments] Erreur HTTP {video_id}: {e.resp.status}")
         return []
     except Exception as e:
-        printf("[YouTube Comments] Erreur {video_id}: {e}")
+        print(f"[YouTube Comments] Erreur {video_id}: {e}")   # correction : printf → print
         return []
 
 async def fetch_youtube_comments(since_time):
@@ -105,23 +121,55 @@ def fetch_rss_feeds():
     for url in RSS_FEEDS:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:5]:  # 5 articles par flux pour ne pas saturer
+            for entry in feed.entries[:5]:
                 title = entry.get("title", "")
                 if title in seen_titles:
                     continue
                 seen_titles.add(title)
-                # Construire un texte à analyser (titre + résumé)
                 text = f"[RSS] {title} - {entry.get('summary', '')}"
                 articles.append({
                     "text": text,
                     "platform": "rss",
-                    "author": "Yonhap",  # ou le nom du média
+                    "author": "Yonhap",
                     "timestamp": datetime.now()
                 })
             print(f"[RSS] {len(feed.entries)} articles récupérés depuis {url}")
         except Exception as e:
             print(f"[RSS] Erreur sur {url}: {e}")
     return articles
+
+# ---------- FONCTION TWITTER (snscrape) ----------
+def fetch_twitter_snscrape(since_time, max_tweets_per_query=TWITTER_MAX_TWEETS_PER_QUERY):
+    """
+    Récupère des tweets récents avec snscrape (sans API officielle).
+    """
+    tweets = []
+    since_str = since_time.strftime("%Y-%m-%d") if since_time else "2020-01-01"
+    
+    for query in TWITTER_QUERIES:
+        # Construction de la requête : filtre de date + langues coréen/anglais
+        search_query = f"{query} since:{since_str} lang:ko OR lang:en"
+        try:
+            count = 0
+            for tweet in sntwitter.TwitterSearchScraper(search_query).get_items():
+                if count >= max_tweets_per_query:
+                    break
+                # Vérification supplémentaire de la date (au cas où)
+                if tweet.date.replace(tzinfo=None) < since_time:
+                    continue
+                tweets.append({
+                    "text": tweet.content,
+                    "platform": "twitter",
+                    "author": tweet.user.username,
+                    "timestamp": tweet.date.replace(tzinfo=None)
+                })
+                count += 1
+            print(f"[Twitter] {count} tweets récupérés pour '{query}'")
+        except Exception as e:
+            print(f"[Twitter] Erreur sur la requête '{query}': {e}")
+    
+    print(f"[Twitter] Total: {len(tweets)} tweets")
+    return tweets
 
 # ---------- COLLECTEUR GLOBAL ----------
 async def collect_all_sources(since_time):
@@ -134,6 +182,11 @@ async def collect_all_sources(since_time):
     # RSS (articles de presse)
     rss_articles = fetch_rss_feeds()
     all_comments.extend(rss_articles)
+    
+    # Twitter (snscrape) – exécution synchrone dans un thread pour ne pas bloquer l'event loop
+    loop = asyncio.get_event_loop()
+    twitter_tweets = await loop.run_in_executor(None, fetch_twitter_snscrape, since_time)
+    all_comments.extend(twitter_tweets)
     
     print(f"[Collect] Total: {len(all_comments)} éléments")
     return all_comments
