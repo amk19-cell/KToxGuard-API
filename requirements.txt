@@ -7,4 +7,4 @@ asyncpg
 aiohttp
 google-api-python-client
 feedparser
-git+https://github.com/JustAnotherArchivist/snscrape.git
+twscrape
