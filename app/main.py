@@ -349,4 +349,4 @@ path = Path(file).parent / "artists.json"
 if not path.exists():
 return []
 with open(path, "r", encoding="utf-8") as f:
-return json.load(f)
+return json.load(f
