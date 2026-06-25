@@ -251,6 +251,19 @@ def root():
 def health():
     return {"status": "healthy"}
 
+@app.get("/backfill")
+async def backfill(db: AsyncSession = Depends(get_db)):
+    """Récupère les commentaires des 7 derniers jours (backfill)."""
+    from datetime import timedelta
+    since_time = datetime.now() - timedelta(days=7)
+    comments = await collect_all_sources(since_time)
+    saved = 0
+    for comment in comments:
+        success = await save_message(db, comment, datetime.now())
+        if success:
+            saved += 1
+    return {"status": "ok", "backfilled": saved, "total_fetched": len(comments)}
+
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     result = detect_toxicity(msg.text, msg.lang)
