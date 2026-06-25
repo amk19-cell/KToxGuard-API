@@ -3,15 +3,21 @@ import os
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import asyncio
+import re
 
+# ---------- CONFIGURATION ----------
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "AIzaSyBrPBb3u__WQicvkokTco77roF_xJ9_czY")
 YOUTUBE_SEARCH_QUERIES = os.environ.get(
     "YOUTUBE_SEARCH_QUERIES",
-    "bts,blackpink,ive,nmixx,katseye,korea school bullying,korea cyberbullying"
+    # REQUÊTES ÉLARGIES (anglais + coréen)
+    "bts,blackpink,ive,nmixx,katseye,korea school bullying,korea cyberbullying,"
+    "korean news,korean society,korean education,"
+    "학교 폭력,왕따,한국 사회,한국 교육,한국 뉴스,사이버폭력,청소년,한국 생활"
 )
 YOUTUBE_MAX_VIDEOS_PER_QUERY = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "2"))
 YOUTUBE_MAX_COMMENTS_PER_VIDEO = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "20"))
 
+# ---------- FONCTIONS ----------
 def search_youtube_videos(query, max_results):
     if not YOUTUBE_API_KEY:
         return []
