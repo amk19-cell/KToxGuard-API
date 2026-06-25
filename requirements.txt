@@ -7,4 +7,3 @@ asyncpg
 aiohttp
 google-api-python-client
 feedparser
-twscrape
