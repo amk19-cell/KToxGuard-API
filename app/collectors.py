@@ -4,32 +4,20 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import asyncio
 import feedparser
-import re
 
-# ---------- CONFIGURATION ----------
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "AIzaSyBrPBb3u__WQicvkokTco77roF_xJ9_czY")
 YOUTUBE_SEARCH_QUERIES = os.environ.get(
     "YOUTUBE_SEARCH_QUERIES",
-    "bts,blackpink,ive,nmixx,katseye,korea school bullying,korea cyberbullying,"
-    "korean news,korean society,korean education,"
-    "학교 폭력,왕따,한국 사회,한국 교육,한국 뉴스,사이버폭력,청소년,한국 생활"
+    "bts,blackpink,ive,nmixx,katseye,korea school bullying,korean society,학교 폭력"
 )
 YOUTUBE_MAX_VIDEOS_PER_QUERY = int(os.environ.get("YOUTUBE_MAX_VIDEOS", "2"))
 YOUTUBE_MAX_COMMENTS_PER_VIDEO = int(os.environ.get("YOUTUBE_MAX_COMMENTS", "20"))
 
-# ---------- FLUX RSS (médias coréens) ----------
 RSS_FEEDS = [
-    "https://www.yna.co.kr/rss/news.xml",          # Yonhap – général
-    "https://www.yna.co.kr/rss/politics.xml",      # Yonhap – politique
-    "https://www.yna.co.kr/rss/economy.xml",       # Yonhap – économie
-    "https://www.yna.co.kr/rss/society.xml",       # Yonhap – société
-    "https://www.yna.co.kr/rss/culture.xml",       # Yonhap – culture
-    # Vous pouvez ajouter d'autres flux ici :
-    # "http://www.koreatimes.co.kr/rss/",          # Korea Times (English)
-    # "https://news.naver.com/main/ranking/rss/",  # Naver News (si disponible)
+    "https://www.yna.co.kr/rss/news.xml",
+    "https://www.yna.co.kr/rss/society.xml",
 ]
 
-# ---------- FONCTIONS YOUTUBE ----------
 def search_youtube_videos(query, max_results):
     if not YOUTUBE_API_KEY:
         return []
@@ -79,7 +67,7 @@ def fetch_youtube_comments_sync(video_id):
         print(f"[YouTube Comments] Erreur HTTP {video_id}: {e.resp.status}")
         return []
     except Exception as e:
-        printf("[YouTube Comments] Erreur {video_id}: {e}")
+        print(f"[YouTube Comments] Erreur {video_id}: {e}")
         return []
 
 async def fetch_youtube_comments(since_time):
@@ -94,46 +82,37 @@ async def fetch_youtube_comments(since_time):
             comments = await loop.run_in_executor(None, fetch_youtube_comments_sync, vid)
             filtered = [c for c in comments if c["timestamp"] > since_time]
             all_comments.extend(filtered)
+        await asyncio.sleep(1)  # pause entre requêtes pour éviter le 429
     print(f"[YouTube] Total: {len(all_comments)} commentaires")
     return all_comments
 
-# ---------- FONCTIONS RSS ----------
 def fetch_rss_feeds():
-    """Récupère les articles des flux RSS configurés."""
     articles = []
     seen_titles = set()
     for url in RSS_FEEDS:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:5]:  # 5 articles par flux pour ne pas saturer
+            for entry in feed.entries[:8]:
                 title = entry.get("title", "")
                 if title in seen_titles:
                     continue
                 seen_titles.add(title)
-                # Construire un texte à analyser (titre + résumé)
-                text = f"[RSS] {title} - {entry.get('summary', '')}"
                 articles.append({
-                    "text": text,
+                    "text": f"[RSS] {title} - {entry.get('summary', '')}",
                     "platform": "rss",
-                    "author": "Yonhap",  # ou le nom du média
+                    "author": "Yonhap",
                     "timestamp": datetime.now()
                 })
-            print(f"[RSS] {len(feed.entries)} articles récupérés depuis {url}")
+            print(f"[RSS] {len(feed.entries)} articles depuis {url}")
         except Exception as e:
             print(f"[RSS] Erreur sur {url}: {e}")
     return articles
 
-# ---------- COLLECTEUR GLOBAL ----------
 async def collect_all_sources(since_time):
     all_comments = []
-    
-    # YouTube
     youtube_comments = await fetch_youtube_comments(since_time)
     all_comments.extend(youtube_comments)
-    
-    # RSS (articles de presse)
     rss_articles = fetch_rss_feeds()
     all_comments.extend(rss_articles)
-    
     print(f"[Collect] Total: {len(all_comments)} éléments")
     return all_comments
