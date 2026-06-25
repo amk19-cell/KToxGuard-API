@@ -5,7 +5,7 @@ from googleapiclient.errors import HttpError
 import asyncio
 import feedparser
 
-YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "AIzaSyBrPBb3u__WQicvkokTco77roF_xJ9_czY")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 YOUTUBE_SEARCH_QUERIES = os.environ.get(
     "YOUTUBE_SEARCH_QUERIES",
     "bts,blackpink,ive,nmixx,katseye,korea school bullying,korean society,학교 폭력"
