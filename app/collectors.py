@@ -5,7 +5,7 @@ from googleapiclient.errors import HttpError
 import asyncio
 import feedparser
 import re
-import twscrape   # <-- remplace snscrape
+import twscrape
 
 # ---------- CONFIGURATION ----------
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "AIzaSyBrPBb3u__WQicvkokTco77roF_xJ9_czY")
