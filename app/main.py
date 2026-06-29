@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-from sqlalchemy import func, select, JSON  # <--- Ajout de JSON ici
+from sqlalchemy import func, select, JSON
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 from datetime import datetime, timedelta
@@ -37,10 +37,10 @@ class Message(Base):
     timestamp: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     label: Mapped[str]
     confidence: Mapped[float]
-    # CORRECTION DES TYPES ICI POUR ALIGNER AVEC POSTGRESQL
     keywords_found: Mapped[Optional[list]] = mapped_column(JSON, default=[])
     threat_types: Mapped[Optional[list]] = mapped_column(JSON, default=[])
     recommendations: Mapped[Optional[dict]] = mapped_column(JSON, default={})
+    mentioned_artists: Mapped[Optional[list]] = mapped_column(JSON, default=[])
     lang: Mapped[str] = mapped_column(default="en")
 
 async def get_db():
@@ -63,6 +63,27 @@ class MessageIn(BaseModel):
     ip_address: Optional[str] = None
     lang: Optional[str] = "en"
 
+# ---------- ARTISTES (pour la démo) ----------
+ARTIST_NAMES = [
+    "Jimin", "RM", "V", "Jungkook", "Suga", "Jin", "J-Hope",
+    "Jisoo", "Jennie", "Rosé", "Lisa",
+    "Yujin", "Gaeul", "Rei", "Wonyoung", "Liz", "Leeseo",
+    "Lily", "Haewon", "Sullyoon", "Bae", "Jiwoo", "Kyujin",
+    "Sophia", "Lara", "Yoonchae", "Megan", "Daniela", "Manon"
+]
+
+def detect_mentioned_artists(text: str):
+    if not text:
+        return []
+    text_lower = text.lower()
+    mentioned = []
+    for name in ARTIST_NAMES:
+        # \b pour éviter les faux positifs (ex: "V" qui matcherait n'importe quel mot avec un v)
+        pattern = r'\b' + re.escape(name.lower()) + r'\b'
+        if re.search(pattern, text_lower):
+            mentioned.append(name)
+    return mentioned
+
 # ---------- LEXIQUE CORÉEN ----------
 def load_korean_lexicon():
     path = Path(__file__).parent / "lexicon.json"
@@ -84,7 +105,9 @@ ENGLISH_LEXICON = {
         "idiot": "idiot", "stupid": "stupide", "moron": "débile", "loser": "loser",
         "trash": "déchet", "garbage": "ordure", "pathetic": "pathétique", "worthless": "sans valeur",
         "fuck you": "fuck you", "asshole": "connard", "bitch": "salope", "whore": "pute",
-        "scum": "vermine", "disgusting": "dégoûtant", "ugly": "moche", "freak": "monstre"
+        "scum": "vermine", "disgusting": "dégoûtant", "ugly": "moche", "freak": "monstre",
+        "attention seeker": "en quête d'attention", "fake": "fausse", "annoying": "agaçant",
+        "too much": "excessive", "exhausting": "épuisante", "dramatic": "dramatique"
     },
     "death_threats": {
         "kill yourself": "suicide-toi", "kys": "suicide-toi (abr.)", "go die": "va mourir",
@@ -105,6 +128,11 @@ ENGLISH_LEXICON = {
     },
     "racial_xenophobic": {
         "go back to your country": "retourne dans ton pays"
+    },
+    "personality_attack": {
+        "too much energy": "trop d'énergie (critique)", "can't stand her": "je ne la supporte pas",
+        "she's the reason": "elle est responsable de", "she ruined": "elle a ruiné",
+        "her fault": "sa faute", "carried by": "portée par les autres"
     }
 }
 
@@ -114,6 +142,9 @@ CONTEXTUAL_PATTERNS = [
     (r"(no one|nobody)\s+(wants to see)", "appearance_rejection", 0.65),
     (r"(shouldn'?t exist|doesn'?t deserve to)", "dehumanization_structural", 0.8),
     (r"(go back to)\s+(your country)", "xenophobic_structural", 0.75),
+    (r"(too much|so much)\s+energy", "personality_attack_structural", 0.55),
+    (r"(since|after)\s+\w+\s+(left|departure)", "departure_blame", 0.5),
+    (r"(carried|saved)\s+by\s+(the|her|him)", "talent_dismissal", 0.6),
 ]
 
 def detect_contextual_patterns(text: str):
@@ -158,6 +189,8 @@ def detect_toxicity(text: str, lang: str = "en"):
                     severity_score = max(severity_score, 0.95)
                 elif category in ("body_shaming", "cyber_harassment", "misogyny_en", "racial_xenophobic"):
                     severity_score = max(severity_score, 0.8)
+                elif category == "personality_attack":
+                    severity_score = max(severity_score, 0.55)
                 else:
                     severity_score = max(severity_score, 0.6)
 
@@ -166,7 +199,7 @@ def detect_toxicity(text: str, lang: str = "en"):
         threat_types.update(pattern_matches)
         severity_score = max(severity_score, pattern_score)
 
-    label = "toxique" if severity_score >= 0.6 else "neutre"
+    label = "toxique" if severity_score >= 0.5 else "neutre"
 
     recommendations = {}
     if label == "toxique":
@@ -176,6 +209,8 @@ def detect_toxicity(text: str, lang: str = "en"):
             recommendations["action"] = "body_shaming_support"
         elif "cyber_harassment" in threat_types or "ostracism" in threat_types:
             recommendations["action"] = "report_and_document"
+        elif "personality_attack" in threat_types or "personality_attack_structural" in threat_types or "departure_blame" in threat_types:
+            recommendations["action"] = "monitor_sentiment"
         else:
             recommendations["action"] = "monitor"
 
@@ -196,6 +231,7 @@ async def save_message(db: AsyncSession, comment: dict, now: datetime):
     """Sauvegarde un seul message avec son propre commit, isolé des autres."""
     try:
         result = detect_toxicity(comment["text"], "en")
+        mentioned = detect_mentioned_artists(comment["text"])
         db_msg = Message(
             text=comment["text"][:2000],
             platform=comment.get("platform", "unknown"),
@@ -206,6 +242,7 @@ async def save_message(db: AsyncSession, comment: dict, now: datetime):
             keywords_found=result["keywords_found"],
             threat_types=result["threat_types"],
             recommendations=result["recommendations"],
+            mentioned_artists=mentioned,
             lang="en"
         )
         db.add(db_msg)
@@ -254,6 +291,7 @@ def health():
 @app.post("/analyze")
 async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
     result = detect_toxicity(msg.text, msg.lang)
+    mentioned = detect_mentioned_artists(msg.text)
     db_msg = Message(
         text=msg.text,
         platform=msg.platform,
@@ -264,10 +302,12 @@ async def analyze(msg: MessageIn, db: AsyncSession = Depends(get_db)):
         keywords_found=result["keywords_found"],
         threat_types=result["threat_types"],
         recommendations=result["recommendations"],
+        mentioned_artists=mentioned,
         lang=msg.lang
     )
     db.add(db_msg)
     await db.commit()
+    result["mentioned_artists"] = mentioned
     return result
 
 @app.post("/import")
@@ -275,6 +315,7 @@ async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(
     imported = 0
     for msg in messages:
         result = detect_toxicity(msg.text, msg.lang)
+        mentioned = detect_mentioned_artists(msg.text)
         db_msg = Message(
             text=msg.text,
             platform=msg.platform,
@@ -285,6 +326,7 @@ async def import_messages(messages: List[MessageIn], db: AsyncSession = Depends(
             keywords_found=result["keywords_found"],
             threat_types=result["threat_types"],
             recommendations=result["recommendations"],
+            mentioned_artists=mentioned,
             lang=msg.lang
         )
         db.add(db_msg)
@@ -337,10 +379,15 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         return {"total_messages": 0, "toxic_count": 0, "toxic_percentage": 0.0, "by_threat_type": {}, "top_keywords": {}}
 
 @app.get("/messages")
-async def get_messages(limit: int = 50, skip: int = 0, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Message).order_by(Message.timestamp.desc()).offset(skip).limit(limit)
-    )
+async def get_messages(limit: int = 50, skip: int = 0, artist: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    query = select(Message).order_by(Message.timestamp.desc())
+    if artist:
+        # Filtre en mémoire car JSON contains n'est pas trivial cross-DB
+        result = await db.execute(query)
+        all_msgs = result.scalars().all()
+        filtered = [m for m in all_msgs if m.mentioned_artists and artist in m.mentioned_artists]
+        return filtered[skip:skip+limit]
+    result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()
 
 @app.get("/artists")
